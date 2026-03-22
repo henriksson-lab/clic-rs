@@ -20,8 +20,6 @@ cmake --build /tmp/clic_build --parallel 4
 
 ## Rust Project Commands
 
-Once the Rust crate exists (`clic-rs/`):
-
 ```bash
 cargo build                          # build the library
 cargo test                           # run unit tests (no GPU required)
@@ -52,10 +50,10 @@ execute(device, kernel, params, {dst->width(), dst->height(), dst->depth()});
 
 The `execute()` function in `CLIc/clic/src/execution.cpp` is the critical piece: it generates `#define` preambles encoding array dimensions (`IMAGE_SIZE_src_WIDTH`), data type macros (`USE_FLOAT`, `CONVERT_dst_PIXEL_TYPE`), and read/write accessor macros (`READ_src_IMAGE`, `WRITE_dst_IMAGE`) before compiling the OpenCL kernel. The full program = preamble + backend preamble + kernel source.
 
-### Planned Rust Module Layout
+### Rust Module Layout
 
 ```
-clic-rs/src/
+src/
   types.rs          # DType, MType enums (must match C++ exactly for kernel preamble generation)
   utils.rs          # sigma2kernelsize, shape_to_dimension — pure functions
   device.rs         # Device trait + OpenCLDevice (holds opencl3::Context + CommandQueue + ProgramCache)
@@ -67,7 +65,7 @@ clic-rs/src/
   tier0.rs          # create_like, create_dst, create_one, create_vector
   tier1/            # Elementary operations; math ops generated via macro_rules!
   tier2/ .. tier8/  # Higher-level operations composing lower tiers
-clic-rs/kernels/    # Vendored .cl files from clij-opencl-kernels tag 3.5.3
+kernels/            # Vendored .cl files from clij-opencl-kernels tag 3.5.3
 ```
 
 ### Key Design Decisions
