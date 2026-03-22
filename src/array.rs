@@ -18,7 +18,7 @@ pub struct Array {
     pub(crate) mtype: MType,
     pub(crate) device: DeviceArc,
     pub(crate) mem: Option<GpuMemPtr>,
-    pub(crate) owns_memory: bool,
+    pub(crate) _owns_memory: bool,
 }
 
 /// Shared, mutable GPU array handle — `Arc<Mutex<Array>>`.
@@ -46,7 +46,7 @@ impl Array {
             mtype,
             device: device.clone(),
             mem: None,
-            owns_memory: true,
+            _owns_memory: true,
         };
         a.allocate()?;
         Ok(Arc::new(Mutex::new(a)))

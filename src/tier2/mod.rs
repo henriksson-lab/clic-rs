@@ -124,7 +124,7 @@ pub fn difference_of_gaussian(
 
 /// Return the maximum pixel value across the entire array.
 pub fn maximum_of_all_pixels(device: &DeviceArc, src: &ArrayPtr) -> Result<f32> {
-    let (w, h, d) = { let l = src.lock().unwrap(); (l.width(), l.height(), l.depth()) };
+    let (_, h, d) = { let l = src.lock().unwrap(); (l.width(), l.height(), l.depth()) };
     let mut tmp = src.clone();
     if d > 1 { tmp = tier1::maximum_projection(device, &tmp, None, 2)?; }
     if h > 1 { tmp = tier1::maximum_projection(device, &tmp, None, 1)?; }

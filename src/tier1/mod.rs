@@ -382,7 +382,7 @@ pub fn mask(device: &DeviceArc, src: &ArrayPtr, mask_arr: &ArrayPtr, dst: Option
 }
 
 /// Set all pixels to a constant value.
-pub fn set(device: &DeviceArc, arr: &ArrayPtr, value: f32) -> Result<()> {
+pub fn set(_device: &DeviceArc, arr: &ArrayPtr, value: f32) -> Result<()> {
     arr.lock().unwrap().fill(value)
 }
 

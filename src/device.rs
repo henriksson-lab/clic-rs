@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use opencl3::command_queue::CommandQueue;
 use opencl3::context::Context;
@@ -28,7 +28,7 @@ pub type DeviceArc = Arc<dyn Device>;
 // ── OpenCL device ────────────────────────────────────────────────────────────
 
 pub struct OpenCLDevice {
-    pub(crate) ocl_device: ClDevice,
+    pub(crate) _ocl_device: ClDevice,
     pub(crate) context: Arc<Context>,
     pub(crate) queue: Arc<CommandQueue>,
     program_cache: SharedProgramCache,
@@ -60,7 +60,7 @@ impl OpenCLDevice {
         let device_hash = DiskCache::hash(&format!("{}:{}", name, driver));
 
         Ok(OpenCLDevice {
-            ocl_device,
+            _ocl_device: ocl_device,
             context,
             queue,
             program_cache: new_shared_program_cache(),
@@ -117,6 +117,7 @@ pub fn enumerate_opencl_devices(device_type: &str) -> Result<Vec<DeviceArc>> {
                 Context::from_device(&cl_dev)
                     .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?,
             );
+            #[allow(deprecated)]
             let queue = Arc::new(unsafe {
                 CommandQueue::create(&context, cl_dev.id(), 0)
                     .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?

@@ -10,7 +10,7 @@ pub fn radius2kernelsize(radius: f32) -> i32 {
 }
 
 /// Infer array dimensionality from shape (mirrors CLIc's `shape_to_dimension`).
-pub fn shape_to_dimension(width: usize, height: usize, depth: usize) -> usize {
+pub fn shape_to_dimension(_width: usize, height: usize, depth: usize) -> usize {
     if depth > 1 { 3 } else if height > 1 { 2 } else { 1 }
 }
 

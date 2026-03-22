@@ -25,8 +25,7 @@ impl GpuMemory {
         match self {
             GpuMemory::Buffer(m) => {
                 let guard = m.lock().unwrap();
-                // Safety: Buffer<u8>::get() is safe to call; opencl3 marks it unsafe for API consistency
-                unsafe { guard.get() }
+                guard.get()
             }
         }
     }
