@@ -1,11 +1,15 @@
-//! Tier 4 — higher-level operations composing lower tiers.
+//! Tier 4 — operations composing tier1–tier3 primitives.
 //!
-//! These functions build on tier1 (and tier2 for tier3+).
-//! Stub implementations — to be filled in.
+//! Mirrors CLIc's `clic/src/tier4/` directory.
 
 use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
-use crate::tier1;
+use crate::tier2;
+use crate::tier3;
 
-// ── Tier 4 composition functions ─────────────────────────────────────────────────────
+/// Mean Squared Error between two arrays: mean((src0 - src1)^2).
+pub fn mean_squared_error(device: &DeviceArc, src0: &ArrayPtr, src1: &ArrayPtr) -> Result<f32> {
+    let diff_sq = tier2::squared_difference(device, src0, src1, None)?;
+    tier3::mean_of_all_pixels(device, &diff_sq)
+}
