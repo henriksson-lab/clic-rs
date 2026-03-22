@@ -1,4 +1,4 @@
-# clesperanto-rs
+# clic-rs
 
 A pure Rust rewrite of [CLIc](https://github.com/clEsperanto/CLIc) — the GPU-accelerated image processing backend of the [clEsperanto](https://github.com/clEsperanto) ecosystem (pyclesperanto, clesperantoj, Fiji/clij3).
 
