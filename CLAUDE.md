@@ -6,17 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository is a **pure Rust rewrite of [CLIc](https://github.com/clEsperanto/CLIc)** — a GPU-accelerated image processing library that is the C++ backend for the clEsperanto ecosystem (pyclesperanto, clesperantoj, Fiji/clij3). The C++ reference implementation lives in `./CLIc/`. No C++ FFI bindings — the goal is idiomatic Rust with OpenCL as the primary GPU backend.
 
-## Building the C++ Reference (for comparison)
-
-```bash
-# Configure (macOS)
-cmake --preset macos-make-release -B /tmp/clic_build
-
-# Build (only the library, not tests — gtest fails on macOS due to cxxabi.h)
-cmake --build /tmp/clic_build --parallel 4
-
-# Output: /tmp/clic_build/clic/libCLIc.dylib
-```
+**This code was generated through automatic translation.** The C++ version of CLIc is authoritative. Improvements should first be made to CLIc and clEsperanto. Changes to clic-rs should focus on translation errors or making the API easier to use.
 
 ## Rust Project Commands
 
@@ -26,6 +16,15 @@ cargo test                           # run unit tests (no GPU required)
 cargo test --features gpu-tests      # run integration tests (requires OpenCL device)
 cargo test <test_name>               # run a single test by name
 cargo clippy -- -D warnings          # lint
+bash benchmark/run.sh                # compare C++ CLIc vs clic-rs side by side
+cargo bench --bench gpu              # Rust-only benchmarks (Criterion HTML report)
+```
+
+## Building the C++ Reference (for comparison)
+
+```bash
+cmake -B /tmp/clic_build -DCMAKE_BUILD_TYPE=Release CLIc/
+cmake --build /tmp/clic_build --parallel 4
 ```
 
 ## Architecture Overview
@@ -60,7 +59,7 @@ src/
   backend.rs        # Backend trait + OpenCLBackend
   backend_manager.rs # OnceLock<Mutex<BackendManager>> singleton
   cache.rs          # ProgramCache (LRU, 128 entries) + DiskCache (~/.cache/clesperanto/)
-  array.rs          # Array struct — Arc<RwLock<Array>>, GPU memory via GpuMemory enum (Buffer/Image)
+  array.rs          # Array struct — Arc<Mutex<Array>>, GPU memory via GpuMemPtr
   execution.rs      # execute(), execute_separable(), generate_defines() — core kernel dispatch
   tier0.rs          # create_like, create_dst, create_one, create_vector
   tier1/            # Elementary operations; math ops generated via macro_rules!
@@ -70,21 +69,23 @@ kernels/            # Vendored .cl files from clij-opencl-kernels tag 3.5.3
 
 ### Key Design Decisions
 
-- **`Arc<RwLock<Array>>`** (aliased as `ArrayPtr`) replaces C++ `shared_ptr<Array>`. RwLock needed because allocation and writes mutate the struct while reads (dimensions, dtype) are concurrent.
+- **`Arc<Mutex<Array>>`** (aliased as `ArrayPtr`) replaces C++ `shared_ptr<Array>`.
 - **`dyn Backend`** trait object in `BackendManager` enables runtime OpenCL/CUDA switching without changing call sites.
 - **Kernel strings** are embedded at compile time via `include_str!("../kernels/cle_xxx.cl")` — zero runtime overhead, self-contained binary.
 - **`generate_defines()`** in `execution.rs` must exactly match the C++ logic in `CLIc/clic/src/execution.cpp` (the `#define` preamble determines how kernels read/write arrays).
-- **Math operation boilerplate** (~53% of tier code) is eliminated using `macro_rules!`: `unary_math_op!(absolute, "fabs(x)")` generates the full dispatch function.
+- **Math operation boilerplate** is eliminated using `macro_rules!`: `unary_math_op!(absolute, "fabs(x)")` generates the full dispatch function. Similarly `binary_scalar_op!` and `image_op!` macros in `tier1/mod.rs`.
 
-### Parameter System
+### Parameter and Constant System
 
-The C++ `std::variant<Array::Pointer, float, int, uint, size_t>` becomes:
 ```rust
-pub enum ParameterValue { Array(ArrayPtr), Float(f32), Int(i32), UInt(u32), SizeT(usize) }
-pub type ParameterList = Vec<(&'static str, ParameterValue)>;
+pub enum ParameterValue { Array(ArrayPtr), Float(f32), Int(i32), Uint(u32), SizeT(usize) }
+pub type ParameterList<'a> = Vec<(&'a str, ParameterValue)>;
+
+pub enum ConstantValue { Int(i32), Float(f32), Str(String) }
+pub type ConstantList<'a> = Vec<(&'a str, ConstantValue)>;
 ```
 
-Use `params![("src", src), ("dst", &dst), ("scalar0", 0.5f32)]` helper macro with `From` impls.
+Parameters are kernel arguments (arrays, scalars). Constants become `#define` directives in the preamble — used for compile-time operation selection (e.g., `OP(x)` → `fabs(x)`, `PROJECTION_AXIS` → `2`).
 
 ### OpenCL Crate
 
@@ -96,3 +97,7 @@ Use `opencl3` (not `ocl`). Key mappings:
 ### Disk Cache
 
 Mirrors C++ `DiskCache`: stores compiled program binaries at `~/.cache/clesperanto/<device_hash>/<source_hash>.bin`. Keyed by SHA-256 of the full program source string. Disabled via `CLESPERANTO_NO_CACHE` env var.
+
+### Tier Algorithm Organization
+
+Algorithms are organized as tiers (matching CLIc): tier1 is fully GPU kernel code, tier2 composes tier1 functions, tier3 composes tier2, and so on. Each tier function takes a `&DeviceArc` and input `&ArrayPtr`(s), with `Option<ArrayPtr>` for optional pre-allocated output.

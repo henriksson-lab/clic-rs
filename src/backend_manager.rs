@@ -1,4 +1,4 @@
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::backend::{Backend, OpenCLBackend};
 use crate::device::{enumerate_opencl_devices, DeviceArc};
@@ -9,14 +9,22 @@ pub struct BackendManager {
     backend: Box<dyn Backend>,
 }
 
-static INSTANCE: OnceLock<Mutex<BackendManager>> = OnceLock::new();
+static INSTANCE: OnceLock<RwLock<BackendManager>> = OnceLock::new();
 
 impl BackendManager {
-    /// Access the global singleton.
-    pub fn get() -> MutexGuard<'static, BackendManager> {
+    /// Access the global singleton (read-only — sufficient for kernel dispatch).
+    pub fn get() -> RwLockReadGuard<'static, BackendManager> {
         INSTANCE
-            .get_or_init(|| Mutex::new(BackendManager { backend: Box::new(OpenCLBackend) }))
-            .lock()
+            .get_or_init(|| RwLock::new(BackendManager { backend: Box::new(OpenCLBackend) }))
+            .read()
+            .unwrap()
+    }
+
+    /// Access the global singleton with write permission (for `set_backend`).
+    pub fn get_mut() -> RwLockWriteGuard<'static, BackendManager> {
+        INSTANCE
+            .get_or_init(|| RwLock::new(BackendManager { backend: Box::new(OpenCLBackend) }))
+            .write()
             .unwrap()
     }
 
@@ -58,7 +66,7 @@ impl BackendManager {
         devices
             .into_iter()
             .find(|d| d.name().to_lowercase().contains(&lower))
-            .or_else(|| Some(enumerate_opencl_devices("all").ok()?.pop()?))
+            .or_else(|| enumerate_opencl_devices("all").ok()?.pop())
             .ok_or(CleError::NoDevicesFound)
     }
 }

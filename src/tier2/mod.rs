@@ -111,9 +111,11 @@ pub fn difference_of_gaussian(
     device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    sigma1_x: f32, sigma1_y: f32, sigma1_z: f32,
-    sigma2_x: f32, sigma2_y: f32, sigma2_z: f32,
+    sigma1: [f32; 3],
+    sigma2: [f32; 3],
 ) -> Result<ArrayPtr> {
+    let [sigma1_x, sigma1_y, sigma1_z] = sigma1;
+    let [sigma2_x, sigma2_y, sigma2_z] = sigma2;
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
     let g1 = tier1::gaussian_blur(device, src, None, sigma1_x, sigma1_y, sigma1_z)?;
     let g2 = tier1::gaussian_blur(device, src, None, sigma2_x, sigma2_y, sigma2_z)?;

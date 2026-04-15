@@ -2,14 +2,14 @@
 ///
 /// The key piece is `generate_defines()` which builds the `#define` preamble
 /// that the CLIJ kernels expect before they can be compiled.
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use crate::array::ArrayPtr;
 use crate::backend::KernelArg;
 use crate::backend_manager::BackendManager;
 use crate::device::DeviceArc;
 use crate::error::Result;
-use crate::types::{DType, MType};
+use crate::types::DType;
 use crate::utils::shape_to_dimension;
 
 // ── Parameter types ───────────────────────────────────────────────────────────
@@ -63,8 +63,8 @@ pub fn generate_defines(params: &[(&str, ParameterValue)], constants: &[(&str, C
     out.push('\n');
 
     // 2. Per-array defines
-    let mut used_dtypes: HashSet<DType> = HashSet::new();
-    let mut used_dims: HashSet<usize> = HashSet::new();
+    let mut used_dtypes: BTreeSet<DType> = BTreeSet::new();
+    let mut used_dims: BTreeSet<usize> = BTreeSet::new();
 
     for (key, val) in params {
         let arr_ptr = match val {
@@ -77,10 +77,12 @@ pub fn generate_defines(params: &[(&str, ParameterValue)], constants: &[(&str, C
 
         let dim = shape_to_dimension(arr.width(), arr.height(), arr.depth());
         let dtype = arr.dtype();
-        let mtype = arr.mtype();
 
         // Buffer path (the only path we support — IMAGE not yet implemented)
-        buffer_defines(&mut out, key, dtype, mtype, dim, arr.width(), arr.height(), arr.depth());
+        buffer_defines(&mut out, &ArrayDefineInfo {
+            key, dtype, dim,
+            width: arr.width(), height: arr.height(), depth: arr.depth(),
+        });
     }
 
     // 3. USE_<DTYPE> defines for all unique dtypes used
@@ -103,18 +105,20 @@ pub fn generate_defines(params: &[(&str, ParameterValue)], constants: &[(&str, C
     out
 }
 
-/// Generate buffer-mode defines for a single array parameter.
-/// Mirrors `bufferDefines()` in CLIc's `execution.cpp`.
-fn buffer_defines(
-    out: &mut String,
-    key: &str,
+struct ArrayDefineInfo<'a> {
+    key: &'a str,
     dtype: DType,
-    _mtype: MType,
     dim: usize,
     width: usize,
     height: usize,
     depth: usize,
-) {
+}
+
+/// Generate buffer-mode defines for a single array parameter.
+/// Mirrors `bufferDefines()` in CLIc's `execution.cpp`.
+#[allow(clippy::too_many_arguments)]
+fn buffer_defines(out: &mut String, info: &ArrayDefineInfo) {
+    let ArrayDefineInfo { key, dtype, dim, width, height, depth } = *info;
     let ndim_strs = ["1", "2", "3"];
     let pos_type_strs = ["int", "int2", "int4"];
     let pos_strs = ["(pos0)", "(pos0, pos1)", "(pos0, pos1, pos2, 0)"];
@@ -164,8 +168,11 @@ pub fn execute(
 
     // Build full program source: defines + preamble + kernel
     let defines = generate_defines(params, constants);
-    let preamble = BackendManager::get().backend().preamble().to_string();
-    let program_source = format!("{}{}{}", defines, preamble, kernel_source);
+    let preamble = BackendManager::get().backend().preamble();
+    let mut program_source = String::with_capacity(defines.len() + preamble.len() + kernel_source.len());
+    program_source.push_str(&defines);
+    program_source.push_str(preamble);
+    program_source.push_str(kernel_source);
 
     // Marshal parameters into KernelArg list (in param order)
     let mut args: Vec<KernelArg> = Vec::with_capacity(params.len());

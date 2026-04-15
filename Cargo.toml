@@ -3,21 +3,23 @@ name = "clic-rs"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
+license-file = "LICENSE.txt"
+description = "clic-rs is a backend library for clEsperanto - a multi-language framework for GPU-accelerated image processing"
 
 [features]
 gpu-tests = []
 
 [dependencies]
-opencl3 = "0.9"
-lru = "0.12"
+opencl3 = "0.12"
+lru = "0.16"
 thiserror = "2"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
-dirs = "5"
+dirs = "6"
 
 [dev-dependencies]
 approx = "0.5"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "gpu"

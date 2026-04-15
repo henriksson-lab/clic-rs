@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::sync::Arc;
 
 use opencl3::command_queue::CommandQueue;
@@ -11,7 +12,7 @@ use crate::cache::{DiskCache, SharedProgramCache};
 use crate::error::{CleError, Result};
 
 /// Abstraction over a GPU device.
-pub trait Device: Send + Sync {
+pub trait Device: Send + Sync + Any {
     fn name(&self) -> &str;
     fn device_type(&self) -> &str;
     fn support_image(&self) -> bool;
@@ -40,7 +41,11 @@ pub struct OpenCLDevice {
     device_hash: String,
 }
 
-// opencl3 types are Send + Sync (they explicitly implement it)
+// Safety: OpenCL 1.2+ spec guarantees that context, command queue, and mem objects
+// are thread-safe after creation (§5.13). The opencl3 crate wraps raw handles that
+// don't carry Rust marker traits, but the underlying cl_context/cl_command_queue
+// can be safely shared across threads. Interior mutable state (program_cache) is
+// protected by Mutex.
 unsafe impl Send for OpenCLDevice {}
 unsafe impl Sync for OpenCLDevice {}
 

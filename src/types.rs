@@ -1,5 +1,5 @@
 /// Data type of GPU array elements — mirrors CLIc's `dType` enum.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DType {
     Int8,
     Uint8,

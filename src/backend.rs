@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +32,8 @@ impl GpuMemory {
     }
 }
 
-// Safety: opencl3 Buffer<u8> is Send + Sync; Mutex provides sync.
+// Safety: The underlying cl_mem handle is thread-safe per OpenCL 1.2+ spec (§5.13).
+// The Mutex<Buffer<u8>> wrapper provides synchronized access for enqueue operations.
 unsafe impl Send for GpuMemory {}
 unsafe impl Sync for GpuMemory {}
 
@@ -50,20 +52,14 @@ pub trait Backend: Send + Sync {
         &self,
         device: &DeviceArc,
         mem: &GpuMemPtr,
-        region: [usize; 3],
-        origin: [usize; 3],
-        host: *const u8,
-        byte_size: usize,
+        data: &[u8],
     ) -> Result<()>;
 
     fn read_memory(
         &self,
         device: &DeviceArc,
         mem: &GpuMemPtr,
-        region: [usize; 3],
-        origin: [usize; 3],
-        host: *mut u8,
-        byte_size: usize,
+        data: &mut [u8],
     ) -> Result<()>;
 
     fn copy_memory(
@@ -107,8 +103,9 @@ pub struct OpenCLBackend;
 
 impl OpenCLBackend {
     fn cast(device: &DeviceArc) -> &OpenCLDevice {
-        // Safety: we only ever place OpenCLDevice behind DeviceArc in enumerate_opencl_devices
-        unsafe { &*(Arc::as_ptr(device) as *const OpenCLDevice) }
+        (device.as_ref() as &dyn Any)
+            .downcast_ref::<OpenCLDevice>()
+            .expect("DeviceArc does not contain an OpenCLDevice")
     }
 }
 
@@ -138,19 +135,14 @@ impl Backend for OpenCLBackend {
         &self,
         device: &DeviceArc,
         mem: &GpuMemPtr,
-        _region: [usize; 3],
-        _origin: [usize; 3],
-        host: *const u8,
-        byte_size: usize,
+        data: &[u8],
     ) -> Result<()> {
         let ocl = Self::cast(device);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref();
         let mut guard = mutex_buf.lock().unwrap();
-        // Safety: host pointer is valid for byte_size bytes (caller's contract)
-        let slice = unsafe { std::slice::from_raw_parts(host, byte_size) };
         let _evt = unsafe {
             ocl.queue
-                .enqueue_write_buffer(&mut *guard, CL_BLOCKING, 0, slice, &[])
+                .enqueue_write_buffer(&mut *guard, CL_BLOCKING, 0, data, &[])
                 .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?
         };
         Ok(())
@@ -160,19 +152,14 @@ impl Backend for OpenCLBackend {
         &self,
         device: &DeviceArc,
         mem: &GpuMemPtr,
-        _region: [usize; 3],
-        _origin: [usize; 3],
-        host: *mut u8,
-        byte_size: usize,
+        data: &mut [u8],
     ) -> Result<()> {
         let ocl = Self::cast(device);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref();
         let guard = mutex_buf.lock().unwrap();
-        // Safety: host pointer is valid for byte_size bytes
-        let slice = unsafe { std::slice::from_raw_parts_mut(host, byte_size) };
         let _evt = unsafe {
             ocl.queue
-                .enqueue_read_buffer(&guard, CL_BLOCKING, 0, slice, &[])
+                .enqueue_read_buffer(&guard, CL_BLOCKING, 0, data, &[])
                 .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?
         };
         Ok(())
@@ -248,15 +235,38 @@ impl Backend for OpenCLBackend {
             return Ok(prog);
         }
 
-        // 2. Compile from source
+        // 2. Check disk cache for a pre-compiled binary
+        let disk = crate::cache::DiskCache::instance();
+        let device_hash = device.device_hash();
+        if let Some(binary) = disk.load(&device_hash, &source_hash, "bin") {
+            if let Ok(program) = Program::create_and_build_from_binary(
+                &dev.context,
+                &[binary.as_slice()],
+                "",
+            ) {
+                let prog_arc = Arc::new(program);
+                device.add_program_to_cache(source_hash, prog_arc.clone());
+                return Ok(prog_arc);
+            }
+            // Binary stale or incompatible — fall through to source compilation
+        }
+
+        // 3. Compile from source
         let program = Program::create_and_build_from_source(&dev.context, source, "")
             .map_err(|e| CleError::OpenCL(format!(
                 "Build failed: {:?}\nSource (first 500 chars):\n{}",
                 e,
                 &source[..source.len().min(500)]
             )))?;
-        let prog_arc = Arc::new(program);
 
+        // Save compiled binary to disk cache
+        if let Ok(binaries) = program.get_binaries() {
+            if let Some(bin) = binaries.first() {
+                disk.save(&device_hash, &source_hash, "bin", bin);
+            }
+        }
+
+        let prog_arc = Arc::new(program);
         device.add_program_to_cache(source_hash, prog_arc.clone());
         Ok(prog_arc)
     }

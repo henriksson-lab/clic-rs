@@ -186,7 +186,7 @@ mod gpu {
         let center = (3 / 2) + (3 / 2) * 3 + (3 / 2) * 3 * 3;
         input[center] = 100.0;
         let src = push(&input, 3, 3, 3, &dev).unwrap();
-        let out = tier2::difference_of_gaussian(&dev, &src, None, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0).unwrap();
+        let out = tier2::difference_of_gaussian(&dev, &src, None, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0]).unwrap();
         let result: Vec<f32> = pull(&out).unwrap();
         // Expected from CLIc test (center value is largest)
         let valid = vec![

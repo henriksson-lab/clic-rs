@@ -241,7 +241,7 @@ pub fn gaussian_blur(
     };
 
     let sigma = [sigma_x, sigma_y, sigma_z];
-    let radius = sigma.map(|s| crate::utils::sigma2kernelsize(s));
+    let radius = sigma.map(crate::utils::sigma2kernelsize);
     execute_separable(
         device,
         ("gaussian_blur_separable", include_str!("../../kernels/gaussian_blur_separable.cl")),

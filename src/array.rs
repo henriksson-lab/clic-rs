@@ -18,7 +18,6 @@ pub struct Array {
     pub(crate) mtype: MType,
     pub(crate) device: DeviceArc,
     pub(crate) mem: Option<GpuMemPtr>,
-    pub(crate) _owns_memory: bool,
 }
 
 /// Shared, mutable GPU array handle — `Arc<Mutex<Array>>`.
@@ -46,7 +45,6 @@ impl Array {
             mtype,
             device: device.clone(),
             mem: None,
-            _owns_memory: true,
         };
         a.allocate()?;
         Ok(Arc::new(Mutex::new(a)))
@@ -96,52 +94,30 @@ impl Array {
 
     pub fn write_from_typed<T: GpuScalar>(&self, data: &[T]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        let byte_size = data.len() * std::mem::size_of::<T>();
-        BackendManager::get().backend().write_memory(
-            &self.device,
-            mem,
-            [self.width, self.height, self.depth],
-            [0, 0, 0],
-            data.as_ptr() as *const u8,
-            byte_size,
-        )
+        // Safety: &[T] where T: Copy can be viewed as &[u8] for the purpose of GPU upload.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
+        };
+        BackendManager::get().backend().write_memory(&self.device, mem, bytes)
     }
 
     pub fn write_from_bytes(&self, data: &[u8]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        BackendManager::get().backend().write_memory(
-            &self.device,
-            mem,
-            [self.width, self.height, self.depth],
-            [0, 0, 0],
-            data.as_ptr(),
-            data.len(),
-        )
+        BackendManager::get().backend().write_memory(&self.device, mem, data)
     }
 
     pub fn read_to_typed<T: GpuScalar>(&self, data: &mut [T]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        let byte_size = data.len() * std::mem::size_of::<T>();
-        BackendManager::get().backend().read_memory(
-            &self.device,
-            mem,
-            [self.width, self.height, self.depth],
-            [0, 0, 0],
-            data.as_mut_ptr() as *mut u8,
-            byte_size,
-        )
+        // Safety: &mut [T] where T: Copy can be viewed as &mut [u8] for GPU readback.
+        let bytes = unsafe {
+            std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, std::mem::size_of_val(data))
+        };
+        BackendManager::get().backend().read_memory(&self.device, mem, bytes)
     }
 
     pub fn read_to_bytes(&self, data: &mut [u8]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        BackendManager::get().backend().read_memory(
-            &self.device,
-            mem,
-            [self.width, self.height, self.depth],
-            [0, 0, 0],
-            data.as_mut_ptr(),
-            data.len(),
-        )
+        BackendManager::get().backend().read_memory(&self.device, mem, data)
     }
 
     pub fn copy_to(&self, dst: &ArrayPtr) -> Result<()> {
@@ -191,7 +167,15 @@ pub fn push<T: GpuScalar>(data: &[T], width: usize, height: usize, depth: usize,
 /// Pull a typed array from the GPU back to a host `Vec`.
 pub fn pull<T: GpuScalar>(arr: &ArrayPtr) -> Result<Vec<T>> {
     let lock = arr.lock().unwrap();
-    let mut out = vec![unsafe { std::mem::zeroed::<T>() }; lock.size()];
-    lock.read_to_typed(&mut out)?;
+    let byte_count = lock.size() * std::mem::size_of::<T>();
+    let mut bytes = vec![0u8; byte_count];
+    lock.read_to_bytes(&mut bytes)?;
+    // Safety: T: GpuScalar is Copy + 'static, and all bit patterns from GPU are valid
+    // for the numeric types (f32, i32, u32, etc.) that implement GpuScalar.
+    let mut out = Vec::with_capacity(lock.size());
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr() as *const T, out.as_mut_ptr(), lock.size());
+        out.set_len(lock.size());
+    }
     Ok(out)
 }
