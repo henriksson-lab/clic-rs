@@ -49,6 +49,16 @@ impl DType {
         }
     }
 
+    /// Canonical alias for CLIc's `toString(dType)`.
+    pub fn to_string(self) -> &'static str {
+        self.to_ocl_str()
+    }
+
+    /// Canonical alias for CLIc's `toShortString(dType)`.
+    pub fn to_short_string(self) -> &'static str {
+        self.to_short_str()
+    }
+
     /// Size in bytes
     pub fn byte_size(self) -> usize {
         match self {
@@ -62,6 +72,11 @@ impl DType {
             DType::Complex => 4,
             DType::Unknown => 0,
         }
+    }
+
+    /// Canonical alias for CLIc's `toBytes(dType)`.
+    pub fn to_bytes(self) -> usize {
+        self.byte_size()
     }
 
     /// The USE_* `#define` that CLIc prepends for this dtype
@@ -78,6 +93,11 @@ impl DType {
             DType::Unknown => "",
         }
     }
+
+    /// Canonical name for CLIc's `dtype_defines` map.
+    pub fn dtype_define(self) -> &'static str {
+        self.dimension_define()
+    }
 }
 
 /// Memory type — mirrors CLIc's `mType` enum.
@@ -85,6 +105,32 @@ impl DType {
 pub enum MType {
     Buffer,
     Image,
+}
+
+impl MType {
+    /// Canonical alias for CLIc's `toString(mType)`.
+    pub fn to_string(self) -> &'static str {
+        match self {
+            MType::Buffer => "Buffer",
+            MType::Image => "Image",
+        }
+    }
+}
+
+pub fn to_string(dtype: DType) -> &'static str {
+    dtype.to_string()
+}
+
+pub fn to_short_string(dtype: DType) -> &'static str {
+    dtype.to_short_string()
+}
+
+pub fn to_bytes(dtype: DType) -> usize {
+    dtype.to_bytes()
+}
+
+pub fn to_mtype_string(mtype: MType) -> &'static str {
+    mtype.to_string()
 }
 
 /// Marker trait for types that map to a DType at compile time.
@@ -128,6 +174,17 @@ impl GpuScalar for u32 {
     }
 }
 
+/// Canonical equivalent of CLIc's `toType<T>()`.
+pub fn to_type<T: GpuScalar>() -> DType {
+    T::dtype()
+}
+
+/// Cast a numeric value to the common scalar representation used by CLIc's
+/// `castTo()` helper.
+pub fn cast_to<T: Into<f64>>(value: T, _dtype: DType) -> f64 {
+    value.into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +208,20 @@ mod tests {
         assert_eq!(DType::Float.to_short_str(), "f");
         assert_eq!(DType::Uint32.to_short_str(), "ui");
         assert_eq!(DType::Int8.to_short_str(), "c");
+    }
+
+    #[test]
+    fn canonical_dtype_aliases() {
+        assert_eq!(to_string(DType::Uint8), "uchar");
+        assert_eq!(to_short_string(DType::Uint16), "us");
+        assert_eq!(to_bytes(DType::Float), 4);
+        assert_eq!(DType::Uint32.dtype_define(), "#define USE_UINT");
+        assert_eq!(to_type::<i16>(), DType::Int16);
+    }
+
+    #[test]
+    fn mtype_string_matches_clic() {
+        assert_eq!(to_mtype_string(MType::Buffer), "Buffer");
+        assert_eq!(to_mtype_string(MType::Image), "Image");
     }
 }

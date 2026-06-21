@@ -1,3 +1,15 @@
+/// Mathematical pi constant matching CLIc's `M_PI` fallback.
+pub const PI: f64 = std::f64::consts::PI;
+
+/// Quiet NaN matching CLIc's `NaN` constant.
+pub const NAN: f32 = f32::NAN;
+
+/// Positive infinity matching CLIc's `pINF` constant.
+pub const P_INF: f32 = f32::INFINITY;
+
+/// Negative infinity matching CLIc's `nINF` constant.
+pub const N_INF: f32 = f32::NEG_INFINITY;
+
 /// Compute kernel half-size from a sigma value (mirrors CLIc's `sigma2kernelsize`).
 pub fn sigma2kernelsize(sigma: f32) -> i32 {
     let rad = (sigma * 8.0) as i32;
@@ -143,6 +155,14 @@ mod tests {
         assert_eq!(sigma2kernelsize(0.0), 1);
         assert_eq!(sigma2kernelsize(1.0), 9);
         assert_eq!(sigma2kernelsize(2.0), 17);
+    }
+
+    #[test]
+    fn test_clic_numeric_constants() {
+        assert_eq!(PI, std::f64::consts::PI);
+        assert!(NAN.is_nan());
+        assert!(P_INF.is_infinite() && P_INF.is_sign_positive());
+        assert!(N_INF.is_infinite() && N_INF.is_sign_negative());
     }
 
     #[test]

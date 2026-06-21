@@ -22,6 +22,26 @@ pub trait Device: Send + Sync + Any {
     fn get_program_from_cache(&self, key: &str) -> Option<Arc<Program>>;
     fn add_program_to_cache(&self, key: String, program: Arc<Program>);
     fn device_hash(&self) -> String;
+
+    /// Canonical alias for CLIc's `getName()`.
+    fn get_name(&self) -> &str {
+        self.name()
+    }
+
+    /// Canonical alias for CLIc's `getDeviceType()`.
+    fn get_device_type(&self) -> &str {
+        self.device_type()
+    }
+
+    /// Canonical alias for CLIc's `getMaximumBufferSize()`.
+    fn get_maximum_buffer_size(&self) -> usize {
+        self.max_buffer_size()
+    }
+
+    /// Canonical alias for CLIc's `getMaximumWorkGroupSize()`.
+    fn get_maximum_work_group_size(&self) -> usize {
+        self.max_work_group_size()
+    }
 }
 
 pub type DeviceArc = Arc<dyn Device>;

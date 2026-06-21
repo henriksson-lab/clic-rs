@@ -60,6 +60,17 @@ pub trait Backend: Send + Sync {
         byte_size: usize,
     ) -> Result<()>;
 
+    /// Canonical buffer-to-buffer alias for CLIc's `copyMemoryBufferToBuffer()`.
+    fn copy_memory_buffer_to_buffer(
+        &self,
+        device: &DeviceArc,
+        src: &GpuMemPtr,
+        dst: &GpuMemPtr,
+        byte_size: usize,
+    ) -> Result<()> {
+        self.copy_memory(device, src, dst, byte_size)
+    }
+
     fn set_memory(
         &self,
         device: &DeviceArc,
@@ -82,6 +93,11 @@ pub trait Backend: Send + Sync {
     ) -> Result<()>;
 
     fn preamble(&self) -> &'static str;
+
+    /// Canonical alias for CLIc's `getPreamble()`.
+    fn get_preamble(&self) -> &'static str {
+        self.preamble()
+    }
 }
 
 // ── Kernel argument types ────────────────────────────────────────────────────

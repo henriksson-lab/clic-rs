@@ -8,7 +8,7 @@ use crate::array::ArrayPtr;
 use crate::backend::KernelArg;
 use crate::backend_manager::BackendManager;
 use crate::device::DeviceArc;
-use crate::error::Result;
+use crate::error::{CleError, Result};
 use crate::types::DType;
 use crate::utils::shape_to_dimension;
 
@@ -196,21 +196,7 @@ pub fn execute(
     program_source.push_str(preamble);
     program_source.push_str(kernel_source);
 
-    // Marshal parameters into KernelArg list (in param order)
-    let mut args: Vec<KernelArg> = Vec::with_capacity(params.len());
-    for (_, val) in params {
-        match val {
-            ParameterValue::Array(a) => {
-                let lock = a.lock().unwrap();
-                let mem = lock.mem_ptr().ok_or(crate::error::CleError::NotAllocated)?;
-                args.push(KernelArg::Mem(mem.clone()));
-            }
-            ParameterValue::Float(v) => args.push(KernelArg::Float(*v)),
-            ParameterValue::Int(v) => args.push(KernelArg::Int(*v)),
-            ParameterValue::Uint(v) => args.push(KernelArg::Uint(*v)),
-            ParameterValue::SizeT(v) => args.push(KernelArg::SizeT(*v)),
-        }
-    }
+    let args = marshal_parameters(params)?;
 
     BackendManager::get().backend().execute_kernel(
         device,
@@ -219,6 +205,322 @@ pub fn execute(
         global_range,
         local_range,
         &args,
+    )
+}
+
+/// Execute a native OpenCL kernel without CLIJ defines or preamble.
+/// Mirrors CLIc's `native_execute()`.
+pub fn native_execute(
+    device: &DeviceArc,
+    kernel: KernelInfo,
+    params: &[(&str, ParameterValue)],
+    global_range: [usize; 3],
+    local_range: [usize; 3],
+) -> Result<()> {
+    let (kernel_name, kernel_source) = kernel;
+    let args = marshal_parameters(params)?;
+
+    BackendManager::get().backend().execute_kernel(
+        device,
+        kernel_source,
+        kernel_name,
+        global_range,
+        local_range,
+        &args,
+    )
+}
+
+fn marshal_parameters(params: &[(&str, ParameterValue)]) -> Result<Vec<KernelArg>> {
+    let mut args: Vec<KernelArg> = Vec::with_capacity(params.len());
+    for (_, val) in params {
+        match val {
+            ParameterValue::Array(a) => {
+                let lock = a.lock().unwrap();
+                let mem = lock.mem_ptr().ok_or(CleError::NotAllocated)?;
+                args.push(KernelArg::Mem(mem.clone()));
+            }
+            ParameterValue::Float(v) => args.push(KernelArg::Float(*v)),
+            ParameterValue::Int(v) => args.push(KernelArg::Int(*v)),
+            ParameterValue::Uint(v) => args.push(KernelArg::Uint(*v)),
+            ParameterValue::SizeT(v) => args.push(KernelArg::SizeT(*v)),
+        }
+    }
+    Ok(args)
+}
+
+/// Evaluate a float expression over one or more arrays into `output`.
+/// Mirrors CLIc's `evaluate()` native-kernel code generation.
+pub fn evaluate(
+    device: &DeviceArc,
+    expression: &str,
+    parameters: &[ParameterValue],
+    output: &ArrayPtr,
+) -> Result<()> {
+    if expression.trim().is_empty() {
+        return Err(CleError::Other("evaluate expression is empty".to_string()));
+    }
+
+    let variable_names = extract_variable_names(expression);
+    if variable_names.is_empty() {
+        return Err(CleError::Other(
+            "evaluate expression contains no variables".to_string(),
+        ));
+    }
+    if variable_names.len() != parameters.len() {
+        return Err(CleError::Other(format!(
+            "evaluate expected {} parameters for variables {:?}, got {}",
+            variable_names.len(),
+            variable_names,
+            parameters.len()
+        )));
+    }
+
+    let (output_mem, output_dtype, total_size) = {
+        let lock = output.lock().unwrap();
+        let mem = lock.mem_ptr().ok_or(CleError::NotAllocated)?.clone();
+        (mem, lock.dtype(), lock.size())
+    };
+
+    if total_size == 0 {
+        return Err(CleError::Other("evaluate output has zero size".to_string()));
+    }
+
+    let mut arg_decls = Vec::new();
+    let mut prelude = Vec::new();
+    let mut args = Vec::new();
+    let mut scalars = Vec::new();
+    let mut has_array = false;
+
+    for (name, param) in variable_names.iter().zip(parameters.iter()) {
+        match param {
+            ParameterValue::Array(array) => {
+                let (mem, dtype, size) = {
+                    let lock = array.lock().unwrap();
+                    let mem = lock.mem_ptr().ok_or(CleError::NotAllocated)?.clone();
+                    (mem, lock.dtype(), lock.size())
+                };
+                if size != total_size {
+                    return Err(CleError::DimensionMismatch);
+                }
+
+                has_array = true;
+                let array_arg = format!("_arr_{name}");
+                arg_decls.push(format!(
+                    "    __global const {}* {array_arg}",
+                    dtype.to_ocl_str()
+                ));
+                prelude.push(format!(
+                    "    const float {name} = (float)({array_arg}[idx]);"
+                ));
+                args.push(KernelArg::Mem(mem));
+            }
+            ParameterValue::Float(value) => scalars.push((name.as_str(), *value)),
+            ParameterValue::Int(value) => scalars.push((name.as_str(), *value as f32)),
+            ParameterValue::Uint(value) => scalars.push((name.as_str(), *value as f32)),
+            ParameterValue::SizeT(value) => scalars.push((name.as_str(), *value as f32)),
+        }
+    }
+
+    if !has_array {
+        return Err(CleError::Other(
+            "evaluate requires at least one array parameter".to_string(),
+        ));
+    }
+
+    arg_decls.push(format!(
+        "    __global {}* _arr_output",
+        output_dtype.to_ocl_str()
+    ));
+    args.push(KernelArg::Mem(output_mem));
+
+    for (name, value) in &scalars {
+        arg_decls.push(format!("    const float {name}"));
+        args.push(KernelArg::Float(*value));
+    }
+
+    if total_size > i32::MAX as usize {
+        return Err(CleError::Other(
+            "evaluate output is too large for native kernel size parameter".to_string(),
+        ));
+    }
+
+    arg_decls.push("    const int _size".to_string());
+    args.push(KernelArg::Int(total_size as i32));
+
+    let promoted_expression = promote_builtins_to_float(expression);
+    let mut kernel_source = String::new();
+    kernel_source.push_str("__kernel void evaluate_kernel(\n");
+    kernel_source.push_str(&arg_decls.join(",\n"));
+    kernel_source.push_str("\n) {\n");
+    kernel_source.push_str("    const int idx = get_global_id(0);\n");
+    kernel_source.push_str("    if (idx >= _size) { return; }\n");
+    for line in &prelude {
+        kernel_source.push_str(line);
+        kernel_source.push('\n');
+    }
+    kernel_source.push_str(&format!(
+        "    _arr_output[idx] = ({})({});\n",
+        output_dtype.to_ocl_str(),
+        promoted_expression
+    ));
+    kernel_source.push_str("}\n");
+
+    BackendManager::get().backend().execute_kernel(
+        device,
+        &kernel_source,
+        "evaluate_kernel",
+        [total_size, 1, 1],
+        [0, 0, 0],
+        &args,
+    )
+}
+
+fn extract_variable_names(expression: &str) -> Vec<String> {
+    let bytes = expression.as_bytes();
+    let mut out = Vec::new();
+    let mut idx = 0;
+
+    while idx < bytes.len() {
+        let ch = bytes[idx] as char;
+        if ch.is_ascii_digit()
+            || (ch == '.' && idx + 1 < bytes.len() && (bytes[idx + 1] as char).is_ascii_digit())
+        {
+            idx = skip_number_literal(bytes, idx);
+            continue;
+        }
+
+        if is_identifier_start(ch) {
+            let start = idx;
+            idx += 1;
+            while idx < bytes.len() && is_identifier_continue(bytes[idx] as char) {
+                idx += 1;
+            }
+            let ident = &expression[start..idx];
+            if !is_evaluate_builtin(ident) && !out.iter().any(|seen| seen == ident) {
+                out.push(ident.to_string());
+            }
+            continue;
+        }
+
+        idx += 1;
+    }
+
+    out
+}
+
+fn skip_number_literal(bytes: &[u8], mut idx: usize) -> usize {
+    if bytes[idx] == b'0' && idx + 1 < bytes.len() && matches!(bytes[idx + 1], b'x' | b'X') {
+        idx += 2;
+        while idx < bytes.len() && (bytes[idx] as char).is_ascii_hexdigit() {
+            idx += 1;
+        }
+    } else {
+        while idx < bytes.len() && (bytes[idx] as char).is_ascii_digit() {
+            idx += 1;
+        }
+        if idx < bytes.len() && bytes[idx] == b'.' {
+            idx += 1;
+            while idx < bytes.len() && (bytes[idx] as char).is_ascii_digit() {
+                idx += 1;
+            }
+        }
+        if idx < bytes.len() && matches!(bytes[idx], b'e' | b'E') {
+            idx += 1;
+            if idx < bytes.len() && matches!(bytes[idx], b'+' | b'-') {
+                idx += 1;
+            }
+            while idx < bytes.len() && (bytes[idx] as char).is_ascii_digit() {
+                idx += 1;
+            }
+        }
+    }
+
+    while idx < bytes.len() && matches!(bytes[idx], b'f' | b'F' | b'l' | b'L' | b'u' | b'U') {
+        idx += 1;
+    }
+    idx
+}
+
+fn promote_builtins_to_float(expression: &str) -> String {
+    let bytes = expression.as_bytes();
+    let mut out = String::with_capacity(expression.len());
+    let mut idx = 0;
+
+    while idx < bytes.len() {
+        let ch = bytes[idx] as char;
+        if is_identifier_start(ch) {
+            let start = idx;
+            idx += 1;
+            while idx < bytes.len() && is_identifier_continue(bytes[idx] as char) {
+                idx += 1;
+            }
+            let ident = &expression[start..idx];
+            out.push_str(match ident {
+                "abs" => "fabs",
+                "min" => "fmin",
+                "max" => "fmax",
+                "power" => "pow",
+                _ => ident,
+            });
+        } else {
+            out.push(ch);
+            idx += 1;
+        }
+    }
+
+    out
+}
+
+fn is_identifier_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn is_evaluate_builtin(ident: &str) -> bool {
+    matches!(
+        ident,
+        "acos"
+            | "asin"
+            | "atan"
+            | "atan2"
+            | "ceil"
+            | "cos"
+            | "cosh"
+            | "exp"
+            | "fabs"
+            | "floor"
+            | "fmax"
+            | "fmin"
+            | "fmod"
+            | "log"
+            | "log10"
+            | "max"
+            | "min"
+            | "pow"
+            | "power"
+            | "round"
+            | "sin"
+            | "sinh"
+            | "sqrt"
+            | "tan"
+            | "tanh"
+            | "abs"
+            | "float"
+            | "double"
+            | "int"
+            | "uint"
+            | "long"
+            | "ulong"
+            | "short"
+            | "ushort"
+            | "char"
+            | "uchar"
+            | "const"
+            | "true"
+            | "false"
     )
 }
 
@@ -367,5 +669,19 @@ mod tests {
         let s = generate_defines(&[], &constants);
         assert!(s.contains("#define OP(x) fabs(x)"));
         assert!(s.contains("GET_IMAGE_WIDTH"));
+    }
+
+    #[test]
+    fn evaluate_variable_names_follow_first_use_order() {
+        let vars = extract_variable_names("min(a, 1.0f) + pow(b, 2) + a + 0x10 + c_3");
+        assert_eq!(vars, vec!["a", "b", "c_3"]);
+    }
+
+    #[test]
+    fn evaluate_promotes_clic_builtins_as_tokens() {
+        assert_eq!(
+            promote_builtins_to_float("abs(a) + min(b, max(c, power(d, 2))) + maximum"),
+            "fabs(a) + fmin(b, fmax(c, pow(d, 2))) + maximum"
+        );
     }
 }

@@ -1,6 +1,11 @@
 //! Tier 8 — higher-level operations composing lower tiers.
 //!
-//! These functions build on tier1 (and tier2 for tier3+).
-//! Stub implementations — to be filled in.
+//! Mirrors CLIc's `clic/src/tier8/` directory.
 
-// ── Tier 8 composition functions ─────────────────────────────────────────────────────
+mod fft;
+mod smooth_connected_labels;
+mod smooth_labels;
+
+pub use fft::{convolve_fft, deconvolve_fft, fft, ifft};
+pub use smooth_connected_labels::smooth_connected_labels;
+pub use smooth_labels::smooth_labels;

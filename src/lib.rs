@@ -18,6 +18,9 @@ pub mod cache;
 pub mod device;
 pub mod error;
 pub mod execution;
+pub mod fft;
+pub mod slicing;
+pub mod statistics;
 pub mod tier0;
 pub mod tier1;
 pub mod tier2;
@@ -27,6 +30,7 @@ pub mod tier5;
 pub mod tier6;
 pub mod tier7;
 pub mod tier8;
+pub mod transform;
 pub mod types;
 pub mod utils;
 
