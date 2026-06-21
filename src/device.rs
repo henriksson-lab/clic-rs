@@ -50,7 +50,11 @@ unsafe impl Send for OpenCLDevice {}
 unsafe impl Sync for OpenCLDevice {}
 
 impl OpenCLDevice {
-    pub fn new(ocl_device: ClDevice, context: Arc<Context>, queue: Arc<CommandQueue>) -> Result<Self> {
+    pub fn new(
+        ocl_device: ClDevice,
+        context: Arc<Context>,
+        queue: Arc<CommandQueue>,
+    ) -> Result<Self> {
         let name = ocl_device.name().unwrap_or_default();
         let dtype = match ocl_device.dev_type().unwrap_or(0) {
             opencl3::device::CL_DEVICE_TYPE_GPU => "gpu".to_string(),
@@ -80,13 +84,27 @@ impl OpenCLDevice {
 }
 
 impl Device for OpenCLDevice {
-    fn name(&self) -> &str { &self.name }
-    fn device_type(&self) -> &str { &self.dtype }
-    fn support_image(&self) -> bool { self.image_support }
-    fn max_buffer_size(&self) -> usize { self.max_buffer_size }
-    fn max_work_group_size(&self) -> usize { self.max_work_group_size }
-    fn device_hash(&self) -> String { self.device_hash.clone() }
-    fn finish(&self) { let _ = self.queue.finish(); }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn device_type(&self) -> &str {
+        &self.dtype
+    }
+    fn support_image(&self) -> bool {
+        self.image_support
+    }
+    fn max_buffer_size(&self) -> usize {
+        self.max_buffer_size
+    }
+    fn max_work_group_size(&self) -> usize {
+        self.max_work_group_size
+    }
+    fn device_hash(&self) -> String {
+        self.device_hash.clone()
+    }
+    fn finish(&self) {
+        let _ = self.queue.finish();
+    }
 
     fn get_program_from_cache(&self, key: &str) -> Option<Arc<Program>> {
         self.program_cache.lock().unwrap().get(key)
@@ -115,12 +133,13 @@ pub fn enumerate_opencl_devices(device_type: &str) -> Result<Vec<DeviceArc>> {
                     opencl3::device::CL_DEVICE_TYPE_CPU => "cpu",
                     _ => "other",
                 };
-                if dev_type != device_type { continue; }
+                if dev_type != device_type {
+                    continue;
+                }
             }
 
             let context = Arc::new(
-                Context::from_device(&cl_dev)
-                    .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?,
+                Context::from_device(&cl_dev).map_err(|e| CleError::OpenCL(format!("{:?}", e)))?,
             );
             #[allow(deprecated)]
             let queue = Arc::new(unsafe {

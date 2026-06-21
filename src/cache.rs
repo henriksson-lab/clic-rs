@@ -33,6 +33,16 @@ impl ProgramCache {
     pub fn contains(&self, key: &str) -> bool {
         self.inner.contains(key)
     }
+
+    /// Get the number of cached programs.
+    pub fn size(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Clear all cached programs.
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
 }
 
 impl Default for ProgramCache {
@@ -71,21 +81,55 @@ impl DiskCache {
         hex::encode(Sha256::digest(input.as_bytes()))
     }
 
-    fn path(&self, device_hash: &str, source_hash: &str, ext: &str) -> Option<PathBuf> {
-        self.root.as_ref().map(|r| {
-            r.join(device_hash).join(format!("{}.{}", source_hash, ext))
-        })
+    pub fn get_file_path(
+        &self,
+        device_hash: &str,
+        source_hash: &str,
+        ext: &str,
+    ) -> Option<PathBuf> {
+        self.root
+            .as_ref()
+            .map(|r| r.join(device_hash).join(format!("{}.{}", source_hash, ext)))
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.root.is_some() && std::env::var("CLESPERANTO_NO_CACHE").is_err()
+    }
+
+    pub fn set_enabled(&self, flag: bool) {
+        if flag {
+            std::env::remove_var("CLESPERANTO_NO_CACHE");
+        } else {
+            std::env::set_var("CLESPERANTO_NO_CACHE", "1");
+        }
+    }
+
+    pub fn get_cache_directory(&self) -> Option<&std::path::Path> {
+        self.root.as_deref()
+    }
+
+    pub fn exists(&self, device_hash: &str, source_hash: &str, ext: &str) -> bool {
+        self.get_file_path(device_hash, source_hash, ext)
+            .is_some_and(|path| path.exists())
     }
 
     /// Load a cached binary. Returns `None` if not found or cache is disabled.
-    pub fn load(&self, device_hash: &str, source_hash: &str, ext: &str) -> Option<Vec<u8>> {
-        let path = self.path(device_hash, source_hash, ext)?;
+    pub fn load_binary(&self, device_hash: &str, source_hash: &str, ext: &str) -> Option<Vec<u8>> {
+        if !self.is_enabled() {
+            return None;
+        }
+        let path = self.get_file_path(device_hash, source_hash, ext)?;
         std::fs::read(&path).ok()
     }
 
     /// Save a compiled binary to the disk cache.
-    pub fn save(&self, device_hash: &str, source_hash: &str, ext: &str, data: &[u8]) {
-        let Some(path) = self.path(device_hash, source_hash, ext) else { return };
+    pub fn save_binary(&self, device_hash: &str, source_hash: &str, ext: &str, data: &[u8]) {
+        if !self.is_enabled() {
+            return;
+        }
+        let Some(path) = self.get_file_path(device_hash, source_hash, ext) else {
+            return;
+        };
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -101,6 +145,14 @@ pub fn new_shared_program_cache() -> SharedProgramCache {
     Arc::new(Mutex::new(ProgramCache::new()))
 }
 
+pub fn is_cache_enabled() -> bool {
+    DiskCache::instance().is_enabled()
+}
+
+pub fn use_cache(flag: bool) {
+    DiskCache::instance().set_enabled(flag);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +163,9 @@ mod tests {
         let mut cache = ProgramCache::new();
         assert!(!cache.contains("nonexistent"));
         assert!(cache.get("nonexistent").is_none());
+        assert_eq!(cache.size(), 0);
+        cache.clear();
+        assert_eq!(cache.size(), 0);
     }
 
     #[test]
@@ -130,8 +185,8 @@ mod tests {
         let device_hash = "test_device_abc";
         let source_hash = "test_source_xyz";
         let data = b"binary_data_1234";
-        cache.save(device_hash, source_hash, "bin", data);
-        let loaded = cache.load(device_hash, source_hash, "bin");
+        cache.save_binary(device_hash, source_hash, "bin", data);
+        let loaded = cache.load_binary(device_hash, source_hash, "bin");
         assert_eq!(loaded.as_deref(), Some(data.as_slice()));
     }
 }

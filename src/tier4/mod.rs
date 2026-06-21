@@ -1,15 +1,11 @@
-//! Tier 4 — operations composing tier1–tier3 primitives.
+//! Tier 4 — operations composing tier1-tier3 primitives.
 //!
 //! Mirrors CLIc's `clic/src/tier4/` directory.
 
-use crate::array::ArrayPtr;
-use crate::device::DeviceArc;
-use crate::error::Result;
-use crate::tier2;
-use crate::tier3;
+mod mean_squared_error;
+mod std_of_all_pixels;
+mod threshold_functions;
 
-/// Mean Squared Error between two arrays: mean((src0 - src1)^2).
-pub fn mean_squared_error(device: &DeviceArc, src0: &ArrayPtr, src1: &ArrayPtr) -> Result<f32> {
-    let diff_sq = tier2::squared_difference(device, src0, src1, None)?;
-    tier3::mean_of_all_pixels(device, &diff_sq)
-}
+pub use mean_squared_error::mean_squared_error;
+pub use std_of_all_pixels::standard_deviation_of_all_pixels;
+pub use threshold_functions::threshold_mean;

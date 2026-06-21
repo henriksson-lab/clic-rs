@@ -11,14 +11,12 @@
 //! let result: Vec<f32> = pull::<f32>(&dst).unwrap();
 //! ```
 
-pub mod error;
-pub mod types;
-pub mod utils;
-pub mod cache;
-pub mod device;
+pub mod array;
 pub mod backend;
 pub mod backend_manager;
-pub mod array;
+pub mod cache;
+pub mod device;
+pub mod error;
 pub mod execution;
 pub mod tier0;
 pub mod tier1;
@@ -29,9 +27,11 @@ pub mod tier5;
 pub mod tier6;
 pub mod tier7;
 pub mod tier8;
+pub mod types;
+pub mod utils;
 
+pub use array::{Array, ArrayPtr};
+pub use backend_manager::BackendManager;
+pub use device::DeviceArc;
 pub use error::{CleError, Result};
 pub use types::{DType, MType};
-pub use array::{Array, ArrayPtr};
-pub use device::DeviceArc;
-pub use backend_manager::BackendManager;

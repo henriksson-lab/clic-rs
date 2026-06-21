@@ -1,10 +1,13 @@
 # clic-rs
 
-A pure Rust rewrite of [CLIc](https://github.com/clEsperanto/CLIc) — the GPU-accelerated image processing backend of the [clEsperanto](https://github.com/clEsperanto) ecosystem (pyclesperanto, clesperantoj, Fiji/clij3).
+A pure Rust translation of [CLIc](https://github.com/clEsperanto/CLIc) — the GPU-accelerated image processing backend of the [clEsperanto](https://github.com/clEsperanto) ecosystem (pyclesperanto, clesperantoj, Fiji/clij3).
 
-No C++ FFI. OpenCL via the [`opencl3`](https://crates.io/crates/opencl3) crate.
+OpenCL is used via the [`opencl3`](https://crates.io/crates/opencl3) crate.
 
 **more testing pending**
+
+* 2026-06-21: Audit ongoing
+
 
 ## This is an LLM-mediated faithful (hopefully) translation, not the original code!
 
@@ -83,25 +86,8 @@ cargo test                        # unit tests (no GPU required)
 cargo test --features gpu-tests   # integration tests (requires OpenCL device)
 ```
 
-## Architecture
-
-```
-clic-rs/src/
-  execution.rs        # generate_defines() + execute() — core kernel dispatch
-  array.rs            # Arc<Mutex<Array>> (ArrayPtr) — GPU memory lifecycle
-  backend.rs          # OpenCL backend: allocate, read, write, execute kernels
-  device.rs           # OpenCLDevice — context, queue, program cache
-  cache.rs            # LRU program cache + SHA-256 disk cache (~/.cache/clesperanto/)
-  tier0.rs            # Array creation helpers (create_like, create_one, …)
-  tier1/              # Elementary ops: math, filters, projections, blur
-  tier2/              # Compositions: morphology, reductions, clipping
-  tier3/ … tier7/     # Higher-level compositions
-clic-rs/kernels/      # Vendored .cl files from clij-opencl-kernels 3.5.3
-CLIc/                 # C++ reference implementation (read-only, for comparison)
-```
-
 The execution model mirrors CLIc: `generate_defines()` builds a `#define` preamble encoding array dimensions and data-type macros, which is prepended to the kernel source before compilation. Compiled programs are cached in memory (LRU, 128 entries) and on disk (SHA-256 keyed).
 
 ## License
 
-Same as CLIc — see [CLIc/LICENSE](CLIc/LICENSE).
+BSD 3-Clause License. See [LICENSE](LICENSE) for details.

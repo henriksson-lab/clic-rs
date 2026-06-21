@@ -48,19 +48,9 @@ pub trait Backend: Send + Sync {
         mtype: MType,
     ) -> Result<GpuMemPtr>;
 
-    fn write_memory(
-        &self,
-        device: &DeviceArc,
-        mem: &GpuMemPtr,
-        data: &[u8],
-    ) -> Result<()>;
+    fn write_memory(&self, device: &DeviceArc, mem: &GpuMemPtr, data: &[u8]) -> Result<()>;
 
-    fn read_memory(
-        &self,
-        device: &DeviceArc,
-        mem: &GpuMemPtr,
-        data: &mut [u8],
-    ) -> Result<()>;
+    fn read_memory(&self, device: &DeviceArc, mem: &GpuMemPtr, data: &mut [u8]) -> Result<()>;
 
     fn copy_memory(
         &self,
@@ -70,7 +60,14 @@ pub trait Backend: Send + Sync {
         byte_size: usize,
     ) -> Result<()>;
 
-    fn set_memory(&self, device: &DeviceArc, mem: &GpuMemPtr, value: f32, dtype: DType, element_count: usize) -> Result<()>;
+    fn set_memory(
+        &self,
+        device: &DeviceArc,
+        mem: &GpuMemPtr,
+        value: f32,
+        dtype: DType,
+        element_count: usize,
+    ) -> Result<()>;
 
     fn build_program(&self, device: &DeviceArc, source: &str) -> Result<Arc<Program>>;
 
@@ -131,12 +128,7 @@ impl Backend for OpenCLBackend {
         Ok(Arc::new(GpuMemory::Buffer(Mutex::new(buf))))
     }
 
-    fn write_memory(
-        &self,
-        device: &DeviceArc,
-        mem: &GpuMemPtr,
-        data: &[u8],
-    ) -> Result<()> {
+    fn write_memory(&self, device: &DeviceArc, mem: &GpuMemPtr, data: &[u8]) -> Result<()> {
         let ocl = Self::cast(device);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref();
         let mut guard = mutex_buf.lock().unwrap();
@@ -148,12 +140,7 @@ impl Backend for OpenCLBackend {
         Ok(())
     }
 
-    fn read_memory(
-        &self,
-        device: &DeviceArc,
-        mem: &GpuMemPtr,
-        data: &mut [u8],
-    ) -> Result<()> {
+    fn read_memory(&self, device: &DeviceArc, mem: &GpuMemPtr, data: &mut [u8]) -> Result<()> {
         let ocl = Self::cast(device);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref();
         let guard = mutex_buf.lock().unwrap();
@@ -202,9 +189,8 @@ impl Backend for OpenCLBackend {
             ($T:ty) => {{
                 let v = value as $T;
                 let data: Vec<$T> = vec![v; element_count];
-                let bytes: &[u8] = unsafe {
-                    std::slice::from_raw_parts(data.as_ptr() as *const u8, byte_size)
-                };
+                let bytes: &[u8] =
+                    unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, byte_size) };
                 unsafe {
                     ocl.queue
                         .enqueue_write_buffer(&mut *guard, CL_BLOCKING, 0, bytes, &[])
@@ -238,12 +224,10 @@ impl Backend for OpenCLBackend {
         // 2. Check disk cache for a pre-compiled binary
         let disk = crate::cache::DiskCache::instance();
         let device_hash = device.device_hash();
-        if let Some(binary) = disk.load(&device_hash, &source_hash, "bin") {
-            if let Ok(program) = Program::create_and_build_from_binary(
-                &dev.context,
-                &[binary.as_slice()],
-                "",
-            ) {
+        if let Some(binary) = disk.load_binary(&device_hash, &source_hash, "bin") {
+            if let Ok(program) =
+                Program::create_and_build_from_binary(&dev.context, &[binary.as_slice()], "")
+            {
                 let prog_arc = Arc::new(program);
                 device.add_program_to_cache(source_hash, prog_arc.clone());
                 return Ok(prog_arc);
@@ -252,17 +236,19 @@ impl Backend for OpenCLBackend {
         }
 
         // 3. Compile from source
-        let program = Program::create_and_build_from_source(&dev.context, source, "")
-            .map_err(|e| CleError::OpenCL(format!(
-                "Build failed: {:?}\nSource (first 500 chars):\n{}",
-                e,
-                &source[..source.len().min(500)]
-            )))?;
+        let program =
+            Program::create_and_build_from_source(&dev.context, source, "").map_err(|e| {
+                CleError::OpenCL(format!(
+                    "Build failed: {:?}\nSource (first 500 chars):\n{}",
+                    e,
+                    &source[..source.len().min(500)]
+                ))
+            })?;
 
         // Save compiled binary to disk cache
         if let Ok(binaries) = program.get_binaries() {
             if let Some(bin) = binaries.first() {
-                disk.save(&device_hash, &source_hash, "bin", bin);
+                disk.save_binary(&device_hash, &source_hash, "bin", bin);
             }
         }
 
@@ -283,8 +269,9 @@ impl Backend for OpenCLBackend {
         let ocl = Self::cast(device);
         let program = self.build_program(device, source)?;
 
-        let kernel = opencl3::kernel::Kernel::create(&program, kernel_name)
-            .map_err(|e| CleError::OpenCL(format!("Kernel '{}' create failed: {:?}", kernel_name, e)))?;
+        let kernel = opencl3::kernel::Kernel::create(&program, kernel_name).map_err(|e| {
+            CleError::OpenCL(format!("Kernel '{}' create failed: {:?}", kernel_name, e))
+        })?;
 
         // Set kernel arguments
         for (i, arg) in args.iter().enumerate() {
@@ -292,45 +279,72 @@ impl Backend for OpenCLBackend {
                 KernelArg::Mem(mem) => {
                     let handle: cl_mem = mem.cl_mem();
                     unsafe {
-                        kernel.set_arg(i as u32, &handle)
-                            .map_err(|e| CleError::OpenCL(format!("set_arg({}) mem failed: {:?}", i, e)))?
+                        kernel.set_arg(i as u32, &handle).map_err(|e| {
+                            CleError::OpenCL(format!("set_arg({}) mem failed: {:?}", i, e))
+                        })?
                     };
                 }
                 KernelArg::Float(v) => {
                     unsafe {
-                        kernel.set_arg(i as u32, v)
-                            .map_err(|e| CleError::OpenCL(format!("set_arg({}) float failed: {:?}", i, e)))?
+                        kernel.set_arg(i as u32, v).map_err(|e| {
+                            CleError::OpenCL(format!("set_arg({}) float failed: {:?}", i, e))
+                        })?
                     };
                 }
                 KernelArg::Int(v) => {
                     unsafe {
-                        kernel.set_arg(i as u32, v)
-                            .map_err(|e| CleError::OpenCL(format!("set_arg({}) int failed: {:?}", i, e)))?
+                        kernel.set_arg(i as u32, v).map_err(|e| {
+                            CleError::OpenCL(format!("set_arg({}) int failed: {:?}", i, e))
+                        })?
                     };
                 }
                 KernelArg::Uint(v) => {
                     unsafe {
-                        kernel.set_arg(i as u32, v)
-                            .map_err(|e| CleError::OpenCL(format!("set_arg({}) uint failed: {:?}", i, e)))?
+                        kernel.set_arg(i as u32, v).map_err(|e| {
+                            CleError::OpenCL(format!("set_arg({}) uint failed: {:?}", i, e))
+                        })?
                     };
                 }
                 KernelArg::SizeT(v) => {
                     let v_u64 = *v as u64;
                     unsafe {
-                        kernel.set_arg(i as u32, &v_u64)
-                            .map_err(|e| CleError::OpenCL(format!("set_arg({}) sizet failed: {:?}", i, e)))?
+                        kernel.set_arg(i as u32, &v_u64).map_err(|e| {
+                            CleError::OpenCL(format!("set_arg({}) sizet failed: {:?}", i, e))
+                        })?
                     };
                 }
             }
         }
 
-        let work_dim = if global_range[2] > 1 { 3 } else if global_range[1] > 1 { 2 } else { 1 };
-        let local_ptr = if local_range[0] == 0 { ptr::null() } else { local_range.as_ptr() };
+        let work_dim = if global_range[2] > 1 {
+            3
+        } else if global_range[1] > 1 {
+            2
+        } else {
+            1
+        };
+        let local_ptr = if local_range[0] == 0 {
+            ptr::null()
+        } else {
+            local_range.as_ptr()
+        };
 
         let _evt = unsafe {
             ocl.queue
-                .enqueue_nd_range_kernel(kernel.get(), work_dim, ptr::null(), global_range.as_ptr(), local_ptr, &[])
-                .map_err(|e| CleError::OpenCL(format!("enqueue_nd_range_kernel '{}' failed: {:?}", kernel_name, e)))?
+                .enqueue_nd_range_kernel(
+                    kernel.get(),
+                    work_dim,
+                    ptr::null(),
+                    global_range.as_ptr(),
+                    local_ptr,
+                    &[],
+                )
+                .map_err(|e| {
+                    CleError::OpenCL(format!(
+                        "enqueue_nd_range_kernel '{}' failed: {:?}",
+                        kernel_name, e
+                    ))
+                })?
         };
 
         Ok(())

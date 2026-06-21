@@ -15,7 +15,11 @@ impl BackendManager {
     /// Access the global singleton (read-only — sufficient for kernel dispatch).
     pub fn get() -> RwLockReadGuard<'static, BackendManager> {
         INSTANCE
-            .get_or_init(|| RwLock::new(BackendManager { backend: Box::new(OpenCLBackend) }))
+            .get_or_init(|| {
+                RwLock::new(BackendManager {
+                    backend: Box::new(OpenCLBackend),
+                })
+            })
             .read()
             .unwrap()
     }
@@ -23,7 +27,11 @@ impl BackendManager {
     /// Access the global singleton with write permission (for `set_backend`).
     pub fn get_mut() -> RwLockWriteGuard<'static, BackendManager> {
         INSTANCE
-            .get_or_init(|| RwLock::new(BackendManager { backend: Box::new(OpenCLBackend) }))
+            .get_or_init(|| {
+                RwLock::new(BackendManager {
+                    backend: Box::new(OpenCLBackend),
+                })
+            })
             .write()
             .unwrap()
     }

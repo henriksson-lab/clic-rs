@@ -83,9 +83,12 @@ impl Array {
         if self.mem.is_some() {
             return Ok(());
         }
-        let mem = BackendManager::get()
-            .backend()
-            .allocate_memory(&self.device, [self.width, self.height, self.depth], self.dtype, self.mtype)?;
+        let mem = BackendManager::get().backend().allocate_memory(
+            &self.device,
+            [self.width, self.height, self.depth],
+            self.dtype,
+            self.mtype,
+        )?;
         self.mem = Some(mem);
         Ok(())
     }
@@ -98,26 +101,37 @@ impl Array {
         let bytes = unsafe {
             std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
         };
-        BackendManager::get().backend().write_memory(&self.device, mem, bytes)
+        BackendManager::get()
+            .backend()
+            .write_memory(&self.device, mem, bytes)
     }
 
     pub fn write_from_bytes(&self, data: &[u8]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        BackendManager::get().backend().write_memory(&self.device, mem, data)
+        BackendManager::get()
+            .backend()
+            .write_memory(&self.device, mem, data)
     }
 
     pub fn read_to_typed<T: GpuScalar>(&self, data: &mut [T]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
         // Safety: &mut [T] where T: Copy can be viewed as &mut [u8] for GPU readback.
         let bytes = unsafe {
-            std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, std::mem::size_of_val(data))
+            std::slice::from_raw_parts_mut(
+                data.as_mut_ptr() as *mut u8,
+                std::mem::size_of_val(data),
+            )
         };
-        BackendManager::get().backend().read_memory(&self.device, mem, bytes)
+        BackendManager::get()
+            .backend()
+            .read_memory(&self.device, mem, bytes)
     }
 
     pub fn read_to_bytes(&self, data: &mut [u8]) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        BackendManager::get().backend().read_memory(&self.device, mem, data)
+        BackendManager::get()
+            .backend()
+            .read_memory(&self.device, mem, data)
     }
 
     pub fn copy_to(&self, dst: &ArrayPtr) -> Result<()> {
@@ -132,34 +146,68 @@ impl Array {
 
     pub fn fill(&self, value: f32) -> Result<()> {
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
-        BackendManager::get()
-            .backend()
-            .set_memory(&self.device, mem, value, self.dtype, self.size())
+        BackendManager::get().backend().set_memory(
+            &self.device,
+            mem,
+            value,
+            self.dtype,
+            self.size(),
+        )
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
 
-    pub fn width(&self) -> usize { self.width }
-    pub fn height(&self) -> usize { self.height }
-    pub fn depth(&self) -> usize { self.depth }
-    pub fn dim(&self) -> usize { self.dim }
+    pub fn width(&self) -> usize {
+        self.width
+    }
+    pub fn height(&self) -> usize {
+        self.height
+    }
+    pub fn depth(&self) -> usize {
+        self.depth
+    }
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
     /// Effective dimensionality derived from shape (may differ from `dim()`).
-    pub fn dimension(&self) -> usize { shape_to_dimension(self.width, self.height, self.depth) }
-    pub fn dtype(&self) -> DType { self.dtype }
-    pub fn mtype(&self) -> MType { self.mtype }
-    pub fn device(&self) -> &DeviceArc { &self.device }
-    pub fn size(&self) -> usize { self.width * self.height * self.depth }
-    pub fn byte_size(&self) -> usize { self.size() * self.dtype.byte_size() }
-    pub fn is_allocated(&self) -> bool { self.mem.is_some() }
+    pub fn dimension(&self) -> usize {
+        shape_to_dimension(self.width, self.height, self.depth)
+    }
+    pub fn dtype(&self) -> DType {
+        self.dtype
+    }
+    pub fn mtype(&self) -> MType {
+        self.mtype
+    }
+    pub fn device(&self) -> &DeviceArc {
+        &self.device
+    }
+    pub fn size(&self) -> usize {
+        self.width * self.height * self.depth
+    }
+    pub fn byte_size(&self) -> usize {
+        self.size() * self.dtype.byte_size()
+    }
+    pub fn is_allocated(&self) -> bool {
+        self.mem.is_some()
+    }
 
     /// Return the raw GPU memory pointer — used by `execution.rs`.
-    pub fn mem_ptr(&self) -> Option<&GpuMemPtr> { self.mem.as_ref() }
+    pub fn mem_ptr(&self) -> Option<&GpuMemPtr> {
+        self.mem.as_ref()
+    }
 }
 
 // ── Convenience free functions ────────────────────────────────────────────────
 
 /// Push a typed slice from the host to the GPU, returning an `ArrayPtr`.
-pub fn push<T: GpuScalar>(data: &[T], width: usize, height: usize, depth: usize, device: &DeviceArc) -> Result<ArrayPtr> {
+pub fn push<T: GpuScalar>(
+    data: &[T],
+    width: usize,
+    height: usize,
+    depth: usize,
+    device: &DeviceArc,
+) -> Result<ArrayPtr> {
     let dim = shape_to_dimension(width, height, depth);
     Array::create_with_data(width, height, depth, dim, MType::Buffer, data, device)
 }

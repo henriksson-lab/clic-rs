@@ -2,23 +2,16 @@
 //!
 //! Mirrors CLIc's `clic/src/tier3/` directory.
 
-use crate::array::ArrayPtr;
-use crate::device::DeviceArc;
-use crate::error::Result;
-use crate::tier1;
-use crate::tier2;
+mod center_of_mass;
+mod gamma_correction;
+mod jaccard_index;
+mod maximum_position;
+mod mean_of_all_pixels;
+mod minimum_position;
 
-/// Return the mean pixel value of the entire array.
-pub fn mean_of_all_pixels(device: &DeviceArc, src: &ArrayPtr) -> Result<f32> {
-    let sum = tier2::sum_of_all_pixels(device, src)?;
-    let n = src.lock().unwrap().size();
-    Ok(sum / n as f32)
-}
-
-/// Gamma correction: `(src / max)^gamma * max`.
-pub fn gamma_correction(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, gamma: f32) -> Result<ArrayPtr> {
-    let max = tier2::maximum_of_all_pixels(device, src)?;
-    let norm = tier2::divide_image_by_scalar(device, src, None, max)?;
-    let powered = tier1::power(device, &norm, None, gamma)?;
-    tier1::multiply_image_and_scalar(device, &powered, dst, max)
-}
+pub use center_of_mass::center_of_mass;
+pub use gamma_correction::gamma_correction;
+pub use jaccard_index::jaccard_index;
+pub use maximum_position::maximum_position;
+pub use mean_of_all_pixels::mean_of_all_pixels;
+pub use minimum_position::minimum_position;

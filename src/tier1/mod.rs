@@ -1,496 +1,98 @@
-//! Tier 1 — elementary GPU operations (mirrors CLIc's `tier1/`).
+//! Tier 1 — elementary GPU operations.
 //!
-//! Math operations (unary, trig, binary) are generated via `macro_rules!`
-//! to eliminate the ~53% boilerplate identified in the C++ codebase.
+//! Mirrors CLIc's `clic/src/tier1/` directory.
 
-use crate::array::ArrayPtr;
-use crate::device::DeviceArc;
-use crate::error::Result;
-use crate::execution::{execute, execute_separable, ConstantValue, ParameterValue};
-use crate::tier0;
-use crate::types::DType;
+mod add_images_weighted;
+mod circular_shift;
+mod common;
+mod copy;
+mod copy_slice;
+mod crop;
+mod detect_label_edges;
+mod dilation;
+mod erosion;
+mod flip;
+mod gaussian_blur;
+mod gradients;
+mod mask;
+mod mask_label;
+mod math_binary_ops;
+mod math_images_ops;
+mod math_trigonometry_ops;
+mod math_unary_ops;
+mod maximum_filter;
+mod mean_filter;
+mod minimum_filter;
+mod multiply_image_and_position;
+mod nan_to_num;
+mod nonzero_maximum;
+mod nonzero_minimum;
+mod pad;
+mod paste;
+mod projections;
+mod range;
+mod read_values_from_positions;
+mod replace_values;
+mod set_operations;
+mod sign;
+mod undefined_to_zero;
+mod variance;
 
-// ── Shared kernel sources ────────────────────────────────────────────────────
-
-const MATH_UNARY_SRC: &str = r#"
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
-
-__kernel void math_unary(
-    IMAGE_src_TYPE  src,
-    IMAGE_dst_TYPE  dst
-)
-{
-  const int x = get_global_id(0);
-  const int y = get_global_id(1);
-  const int z = get_global_id(2);
-
-  const float value = (float) READ_IMAGE(src, sampler, POS_src_INSTANCE(x,y,z,0)).x;
-  float res = OP(value);
-  WRITE_IMAGE(dst, POS_dst_INSTANCE(x,y,z,0), CONVERT_dst_PIXEL_TYPE(res));
-}
-"#;
-
-// ── Macro: unary math operation ──────────────────────────────────────────────
-
-macro_rules! unary_math_op {
-    ($fn_name:ident, $op_expr:literal) => {
-        pub fn $fn_name(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-            let dst = tier0::create_like_same(src, dst, device)?;
-            let global = {
-                let lock = dst.lock().unwrap();
-                [lock.width(), lock.height(), lock.depth()]
-            };
-            let params = vec![
-                ("src", ParameterValue::Array(src.clone())),
-                ("dst", ParameterValue::Array(dst.clone())),
-            ];
-            let constants = vec![
-                ("OP(x)", ConstantValue::Str($op_expr.to_string())),
-            ];
-            execute(device, ("math_unary", MATH_UNARY_SRC), &params, global, [0, 0, 0], &constants)?;
-            Ok(dst)
-        }
-    };
-}
-
-// ── Unary math operations ────────────────────────────────────────────────────
-
-unary_math_op!(absolute,      "fabs(x)");
-unary_math_op!(cubic_root,    "cbrt(x)");
-unary_math_op!(square_root,   "sqrt(x)");
-unary_math_op!(exponential,   "exp(x)");
-unary_math_op!(exponential2,  "exp2(x)");
-unary_math_op!(exponential10, "exp10(x)");
-unary_math_op!(logarithm,     "log(x)");
-unary_math_op!(logarithm2,    "log2(x)");
-unary_math_op!(logarithm10,   "log10(x)");
-unary_math_op!(reciprocal,    "1.0f / x");
-unary_math_op!(ceil,          "ceil(x)");
-unary_math_op!(floor,         "floor(x)");
-unary_math_op!(round,         "round(x)");
-unary_math_op!(truncate,      "trunc(x)");
-unary_math_op!(binary_not,    "(x != 0) ? 0 : 1");
-unary_math_op!(sign,          "(x > 0) ? 1 : ((x < 0) ? -1 : 0)");
-
-// ── Trig operations (same pattern as unary math) ─────────────────────────────
-
-unary_math_op!(sin_func,  "sin(x)");
-unary_math_op!(cos_func,  "cos(x)");
-unary_math_op!(tan_func,  "tan(x)");
-unary_math_op!(asin_func, "asin(x)");
-unary_math_op!(acos_func, "acos(x)");
-unary_math_op!(atan_func, "atan(x)");
-unary_math_op!(sinh_func, "sinh(x)");
-unary_math_op!(cosh_func, "cosh(x)");
-unary_math_op!(tanh_func, "tanh(x)");
-unary_math_op!(asinh_func, "asinh(x)");
-unary_math_op!(acosh_func, "acosh(x)");
-unary_math_op!(atanh_func, "atanh(x)");
-
-// ── Binary math operations (scalar) ─────────────────────────────────────────
-
-macro_rules! binary_scalar_op {
-    ($fn_name:ident, $op_expr:literal) => {
-        pub fn $fn_name(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, scalar: f32) -> Result<ArrayPtr> {
-            let dst = tier0::create_like_same(src, dst, device)?;
-            let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-            let params = vec![
-                ("src", ParameterValue::Array(src.clone())),
-                ("dst", ParameterValue::Array(dst.clone())),
-                ("scalar", ParameterValue::Float(scalar)),
-            ];
-            let constants = vec![("OP(x,y)", ConstantValue::Str($op_expr.to_string()))];
-            execute(device, ("math_binary_scalar", MATH_BINARY_SCALAR_SRC), &params, global, [0, 0, 0], &constants)?;
-            Ok(dst)
-        }
-    };
-}
-
-const MATH_BINARY_SCALAR_SRC: &str = r#"
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
-
-__kernel void math_binary_scalar(
-    IMAGE_src_TYPE  src,
-    IMAGE_dst_TYPE  dst,
-    float scalar
-)
-{
-  const int x = get_global_id(0);
-  const int y = get_global_id(1);
-  const int z = get_global_id(2);
-  const float value = (float) READ_IMAGE(src, sampler, POS_src_INSTANCE(x,y,z,0)).x;
-  float res = OP(value, scalar);
-  WRITE_IMAGE(dst, POS_dst_INSTANCE(x,y,z,0), CONVERT_dst_PIXEL_TYPE(res));
-}
-"#;
-
-binary_scalar_op!(add_image_and_scalar,      "x + y");
-binary_scalar_op!(subtract_image_and_scalar, "x - y");
-binary_scalar_op!(multiply_image_and_scalar, "x * y");
-binary_scalar_op!(divide_image_and_scalar,   "x / y");
-binary_scalar_op!(power,                     "pow(x, y)");
-binary_scalar_op!(greater_constant,          "(x > y) ? 1 : 0");
-binary_scalar_op!(greater_or_equal_constant, "(x >= y) ? 1 : 0");
-binary_scalar_op!(smaller_constant,          "(x < y) ? 1 : 0");
-binary_scalar_op!(smaller_or_equal_constant, "(x <= y) ? 1 : 0");
-binary_scalar_op!(equal_constant,            "(x == y) ? 1 : 0");
-binary_scalar_op!(not_equal_constant,        "(x != y) ? 1 : 0");
-
-// ── Two-image operations ─────────────────────────────────────────────────────
-
-/// Add two images element-wise with independent scale factors.
-pub fn add_images_weighted(
-    device: &DeviceArc,
-    src0: &ArrayPtr,
-    src1: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    factor0: f32,
-    factor1: f32,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_like(src0, dst, DType::Float, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src0", ParameterValue::Array(src0.clone())),
-        ("src1", ParameterValue::Array(src1.clone())),
-        ("dst",  ParameterValue::Array(dst.clone())),
-        ("scalar0", ParameterValue::Float(factor0)),
-        ("scalar1", ParameterValue::Float(factor1)),
-    ];
-    execute(device, ("add_images_weighted", include_str!("../../kernels/add_images_weighted.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-// Inline kernel used by maximum_images, minimum_images, multiply_images, etc.
-// Mirrors CLIc's apply_images_math_operation kernel.
-pub const IMAGE_OPERATION_SRC: &str = r#"
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
-
-#ifndef APPLY_OP
-  #error "APPLY_OP must be defined (e.g. #define APPLY_OP(x,y) (x+y))"
-#endif
-
-__kernel void image_operation(
-    IMAGE_src0_TYPE src0,
-    IMAGE_src1_TYPE src1,
-    IMAGE_dst_TYPE  dst
-)
-{
-    int x = get_global_id(0);
-    int y = get_global_id(1);
-    int z = get_global_id(2);
-    const float value0 = (float) READ_IMAGE(src0, sampler, POS_src0_INSTANCE(x,y,z,0)).x;
-    const float value1 = (float) READ_IMAGE(src1, sampler, POS_src1_INSTANCE(x,y,z,0)).x;
-    const float res = APPLY_OP(value0, value1);
-    WRITE_IMAGE(dst, POS_dst_INSTANCE(x,y,z,0), CONVERT_dst_PIXEL_TYPE(res));
-}
-"#;
-
-macro_rules! image_op {
-    ($fn_name:ident, $op_expr:literal) => {
-        pub fn $fn_name(device: &DeviceArc, src0: &ArrayPtr, src1: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-            let dst = tier0::create_like_same(src0, dst, device)?;
-            let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-            let params = vec![
-                ("src0", ParameterValue::Array(src0.clone())),
-                ("src1", ParameterValue::Array(src1.clone())),
-                ("dst",  ParameterValue::Array(dst.clone())),
-            ];
-            let constants = vec![("APPLY_OP(x,y)", ConstantValue::Str($op_expr.to_string()))];
-            execute(device, ("image_operation", IMAGE_OPERATION_SRC), &params, global, [0, 0, 0], &constants)?;
-            Ok(dst)
-        }
-    };
-}
-
-image_op!(maximum_images,  "fmax(x, y)");
-image_op!(minimum_images,  "fmin(x, y)");
-image_op!(multiply_images, "x * y");
-image_op!(divide_images,   "x / y");
-image_op!(modulo_images,   "fmod(x, y)");
-image_op!(power_images,    "pow(x, y)");
-
-/// Copy src to dst.
-pub fn copy(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    execute(device, ("copy", include_str!("../../kernels/copy.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Gaussian blur with per-axis sigma values.
-pub fn gaussian_blur(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    sigma_x: f32,
-    sigma_y: f32,
-    sigma_z: f32,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_like(src, dst, DType::Float, device)?;
-
-    // Convert to float if needed
-    let src_float = if src.lock().unwrap().dtype() != DType::Float {
-        let t = tier0::create_like(src, None, DType::Float, device)?;
-        copy(device, src, Some(t.clone()))?
-    } else {
-        src.clone()
-    };
-
-    let sigma = [sigma_x, sigma_y, sigma_z];
-    let radius = sigma.map(crate::utils::sigma2kernelsize);
-    execute_separable(
-        device,
-        ("gaussian_blur_separable", include_str!("../../kernels/gaussian_blur_separable.cl")),
-        &src_float,
-        &dst,
-        sigma,
-        radius,
-        [0, 0, 0],
-    )?;
-    Ok(dst)
-}
-
-// ── Projection macro ─────────────────────────────────────────────────────────
-
-/// Generic projection along an axis.
-/// `kernel_file` must contain a single-function kernel named `kernel_fn_name`
-/// that uses a `PROJECTION_AXIS` compile-time constant (0=X, 1=Y, 2=Z).
-/// Global range is over dst dimensions (matching CLIc's range = dst->width/height/depth).
-fn run_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: &ArrayPtr,
-    axis: usize,
-    kernel_name: &str,
-    kernel_src: &str,
-) -> Result<()> {
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(axis as i32))];
-    execute(device, (kernel_name, kernel_src), &params, global, [0, 0, 0], &constants)
-}
-
-/// Maximum projection along an axis (0=X, 1=Y, 2=Z).
-pub fn maximum_projection(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, axis: usize) -> Result<ArrayPtr> {
-    let dst = dst.unwrap_or(tier0::create_projection(src, axis, device)?);
-    run_projection(device, src, &dst, axis, "maximum_projection", include_str!("../../kernels/maximum_projection.cl"))?;
-    Ok(dst)
-}
-
-/// Minimum projection along an axis.
-pub fn minimum_projection(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, axis: usize) -> Result<ArrayPtr> {
-    let dst = dst.unwrap_or(tier0::create_projection(src, axis, device)?);
-    run_projection(device, src, &dst, axis, "minimum_projection", include_str!("../../kernels/minimum_projection.cl"))?;
-    Ok(dst)
-}
-
-/// Sum projection along an axis.
-pub fn sum_projection(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, axis: usize) -> Result<ArrayPtr> {
-    let dst = dst.unwrap_or(tier0::create_projection(src, axis, device)?);
-    run_projection(device, src, &dst, axis, "sum_projection", include_str!("../../kernels/sum_projection.cl"))?;
-    Ok(dst)
-}
-
-/// Mean projection along an axis.
-pub fn mean_projection(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, axis: usize) -> Result<ArrayPtr> {
-    let dst = dst.unwrap_or(tier0::create_projection(src, axis, device)?);
-    run_projection(device, src, &dst, axis, "mean_projection", include_str!("../../kernels/mean_projection.cl"))?;
-    Ok(dst)
-}
-
-/// Morphological box dilation.
-pub fn dilate_box(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    execute(device, ("dilate_box", include_str!("../../kernels/dilate_box.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Morphological box erosion.
-pub fn erode_box(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    execute(device, ("erode_box", include_str!("../../kernels/erode_box.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Morphological sphere (cross) dilation.
-pub fn dilate_sphere(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    execute(device, ("dilate_sphere", include_str!("../../kernels/dilate_sphere.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Morphological sphere (cross) erosion.
-pub fn erode_sphere(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    execute(device, ("erode_sphere", include_str!("../../kernels/erode_sphere.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Flip an array along the given axes.
-pub fn flip(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>, flip_x: bool, flip_y: bool, flip_z: bool) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("flipx", ParameterValue::Int(flip_x as i32)),
-        ("flipy", ParameterValue::Int(flip_y as i32)),
-        ("flipz", ParameterValue::Int(flip_z as i32)),
-    ];
-    execute(device, ("flip", include_str!("../../kernels/flip.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Apply a mask: set pixels to 0 where mask == 0.
-pub fn mask(device: &DeviceArc, src: &ArrayPtr, mask_arr: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("mask", ParameterValue::Array(mask_arr.clone())),
-        ("dst",  ParameterValue::Array(dst.clone())),
-    ];
-    execute(device, ("mask", include_str!("../../kernels/mask.cl")), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
-
-/// Set all pixels to a constant value.
-pub fn set(_device: &DeviceArc, arr: &ArrayPtr, value: f32) -> Result<()> {
-    arr.lock().unwrap().fill(value)
-}
-
-// ── Separable min/max/variance filters ───────────────────────────────────────
-
-/// Maximum filter with box (separable) or sphere connectivity.
-pub fn maximum_filter(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    radius_x: f32,
-    radius_y: f32,
-    radius_z: f32,
-    connectivity: &str,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let r = [
-        crate::utils::radius2kernelsize(radius_x),
-        crate::utils::radius2kernelsize(radius_y),
-        crate::utils::radius2kernelsize(radius_z),
-    ];
-    if connectivity == "sphere" {
-        let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-        let params = vec![
-            ("src",     ParameterValue::Array(src.clone())),
-            ("dst",     ParameterValue::Array(dst.clone())),
-            ("scalar0", ParameterValue::Int(r[0])),
-            ("scalar1", ParameterValue::Int(r[1])),
-            ("scalar2", ParameterValue::Int(r[2])),
-        ];
-        execute(device, ("maximum_sphere", include_str!("../../kernels/maximum_sphere.cl")), &params, global, [0, 0, 0], &[])?;
-    } else {
-        let sigma = [radius_x, radius_y, radius_z];
-        execute_separable(
-            device,
-            ("maximum_separable", include_str!("../../kernels/maximum_separable.cl")),
-            src, &dst, sigma, r, [0, 0, 0],
-        )?;
-    }
-    Ok(dst)
-}
-
-/// Minimum filter with box (separable) or sphere connectivity.
-pub fn minimum_filter(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    radius_x: f32,
-    radius_y: f32,
-    radius_z: f32,
-    connectivity: &str,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let r = [
-        crate::utils::radius2kernelsize(radius_x),
-        crate::utils::radius2kernelsize(radius_y),
-        crate::utils::radius2kernelsize(radius_z),
-    ];
-    if connectivity == "sphere" {
-        let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-        let params = vec![
-            ("src",     ParameterValue::Array(src.clone())),
-            ("dst",     ParameterValue::Array(dst.clone())),
-            ("scalar0", ParameterValue::Int(r[0])),
-            ("scalar1", ParameterValue::Int(r[1])),
-            ("scalar2", ParameterValue::Int(r[2])),
-        ];
-        execute(device, ("minimum_sphere", include_str!("../../kernels/minimum_sphere.cl")), &params, global, [0, 0, 0], &[])?;
-    } else {
-        let sigma = [radius_x, radius_y, radius_z];
-        execute_separable(
-            device,
-            ("minimum_separable", include_str!("../../kernels/minimum_separable.cl")),
-            src, &dst, sigma, r, [0, 0, 0],
-        )?;
-    }
-    Ok(dst)
-}
-
-/// Variance filter with box or sphere connectivity.
-pub fn variance_filter(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    radius_x: f32,
-    radius_y: f32,
-    radius_z: f32,
-    connectivity: &str,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    let r = [
-        crate::utils::radius2kernelsize(radius_x),
-        crate::utils::radius2kernelsize(radius_y),
-        crate::utils::radius2kernelsize(radius_z),
-    ];
-    let global = { let l = dst.lock().unwrap(); [l.width(), l.height(), l.depth()] };
-    let params = vec![
-        ("src",     ParameterValue::Array(src.clone())),
-        ("dst",     ParameterValue::Array(dst.clone())),
-        ("scalar0", ParameterValue::Int(r[0])),
-        ("scalar1", ParameterValue::Int(r[1])),
-        ("scalar2", ParameterValue::Int(r[2])),
-    ];
-    let (kname, ksrc) = if connectivity == "sphere" {
-        ("variance_sphere", include_str!("../../kernels/variance_sphere.cl"))
-    } else {
-        ("variance_box", include_str!("../../kernels/variance_box.cl"))
-    };
-    execute(device, (kname, ksrc), &params, global, [0, 0, 0], &[])?;
-    Ok(dst)
-}
+pub use add_images_weighted::add_images_weighted;
+pub use circular_shift::circular_shift;
+pub use copy::copy;
+pub use copy_slice::{copy_horizontal_slice, copy_slice, copy_vertical_slice};
+pub use crop::crop;
+pub use detect_label_edges::detect_label_edges;
+pub use dilation::{dilate_box, dilate_sphere};
+pub use erosion::{erode_box, erode_sphere};
+pub use flip::flip;
+pub use gaussian_blur::gaussian_blur;
+pub use gradients::{gradient_x, gradient_y, gradient_z};
+pub use mask::mask;
+pub use mask_label::mask_label;
+pub use math_binary_ops::{
+    add_image_and_scalar, divide_image_by_scalar, divide_scalar_by_image, equal_constant,
+    greater_constant, greater_or_equal_constant, maximum_image_and_scalar,
+    minimum_image_and_scalar, multiply_image_and_scalar, not_equal_constant, power, root,
+    smaller_constant, smaller_or_equal_constant, subtract_image_from_scalar,
+    subtract_scalar_from_image,
+};
+pub use math_images_ops::{
+    binary_and, binary_or, binary_subtract, binary_xor, divide_images, equal, greater,
+    greater_or_equal, maximum_images, minimum_images, modulo_images, multiply_images, not_equal,
+    power_images, smaller, smaller_or_equal, IMAGE_OPERATION_SRC,
+};
+pub use math_trigonometry_ops::{acos, asin, atan, cos, cosh, sin, sinh, tan, tanh};
+pub use math_unary_ops::{
+    absolute, binary_not, ceil, cubic_root, exponential, exponential10, exponential2, floor,
+    logarithm, logarithm10, logarithm2, reciprocal, round, square_root, truncate,
+};
+pub use maximum_filter::{maximum_box, maximum_filter, maximum_sphere};
+pub use mean_filter::{mean_box, mean_filter, mean_sphere};
+pub use minimum_filter::{minimum_box, minimum_filter, minimum_sphere};
+pub use multiply_image_and_position::multiply_image_and_position;
+pub use nan_to_num::nan_to_num;
+pub use nonzero_maximum::{nonzero_maximum, nonzero_maximum_box, nonzero_maximum_diamond};
+pub use nonzero_minimum::{nonzero_minimum, nonzero_minimum_box, nonzero_minimum_diamond};
+pub use pad::{pad, unpad};
+pub use paste::paste;
+pub use projections::{
+    maximum_x_projection, maximum_y_projection, maximum_z_projection, mean_x_projection,
+    mean_y_projection, mean_z_projection, minimum_x_projection, minimum_y_projection,
+    minimum_z_projection, sum_x_projection, sum_y_projection, sum_z_projection,
+    x_position_of_maximum_x_projection, x_position_of_minimum_x_projection,
+    y_position_of_maximum_y_projection, y_position_of_minimum_y_projection,
+    z_position_of_maximum_z_projection, z_position_of_minimum_z_projection, z_position_projection,
+};
+pub use range::range;
+pub use read_values_from_positions::read_values_from_positions;
+pub use replace_values::{replace_intensities, replace_intensity, replace_value, replace_values};
+pub use set_operations::{
+    set, set_column, set_image_borders, set_nonzero_pixels_to_pixelindex, set_plane, set_ramp_x,
+    set_ramp_y, set_ramp_z, set_row, set_where_x_equals_y, set_where_x_greater_than_y,
+    set_where_x_smaller_than_y,
+};
+pub use sign::sign;
+pub use undefined_to_zero::undefined_to_zero;
+pub use variance::{variance_box, variance_filter, variance_sphere};

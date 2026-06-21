@@ -93,25 +93,39 @@ pub trait GpuScalar: Copy + Send + Sync + 'static {
 }
 
 impl GpuScalar for f32 {
-    fn dtype() -> DType { DType::Float }
+    fn dtype() -> DType {
+        DType::Float
+    }
 }
 impl GpuScalar for i8 {
-    fn dtype() -> DType { DType::Int8 }
+    fn dtype() -> DType {
+        DType::Int8
+    }
 }
 impl GpuScalar for u8 {
-    fn dtype() -> DType { DType::Uint8 }
+    fn dtype() -> DType {
+        DType::Uint8
+    }
 }
 impl GpuScalar for i16 {
-    fn dtype() -> DType { DType::Int16 }
+    fn dtype() -> DType {
+        DType::Int16
+    }
 }
 impl GpuScalar for u16 {
-    fn dtype() -> DType { DType::Uint16 }
+    fn dtype() -> DType {
+        DType::Uint16
+    }
 }
 impl GpuScalar for i32 {
-    fn dtype() -> DType { DType::Int32 }
+    fn dtype() -> DType {
+        DType::Int32
+    }
 }
 impl GpuScalar for u32 {
-    fn dtype() -> DType { DType::Uint32 }
+    fn dtype() -> DType {
+        DType::Uint32
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,11 @@
 /// Compute kernel half-size from a sigma value (mirrors CLIc's `sigma2kernelsize`).
 pub fn sigma2kernelsize(sigma: f32) -> i32 {
     let rad = (sigma * 8.0) as i32;
-    if rad % 2 == 0 { rad + 1 } else { rad }
+    if rad % 2 == 0 {
+        rad + 1
+    } else {
+        rad
+    }
 }
 
 /// Compute kernel size from a radius value (mirrors CLIc's `radius2kernelsize`).
@@ -11,7 +15,13 @@ pub fn radius2kernelsize(radius: f32) -> i32 {
 
 /// Infer array dimensionality from shape (mirrors CLIc's `shape_to_dimension`).
 pub fn shape_to_dimension(_width: usize, height: usize, depth: usize) -> usize {
-    if depth > 1 { 3 } else if height > 1 { 2 } else { 1 }
+    if depth > 1 {
+        3
+    } else if height > 1 {
+        2
+    } else {
+        1
+    }
 }
 
 /// Find the next "smooth" number ≥ x whose prime factors are only {2,3,5,7}.
@@ -26,7 +36,9 @@ pub fn next_smooth(x: usize) -> usize {
         let mut power = p as usize;
         while power <= x + z {
             let mut j = x % power;
-            if j > 0 { j = power - j; }
+            if j > 0 {
+                j = power - j;
+            }
             while j < z {
                 a[j] += log_p;
                 j += power;
@@ -71,6 +83,57 @@ pub fn render_template(tmpl: &str, vars: &[(&str, &str)]) -> String {
     result
 }
 
+/// Load a file into a string.
+pub fn load_file(file_path: impl AsRef<std::path::Path>) -> std::io::Result<String> {
+    std::fs::read_to_string(file_path)
+}
+
+/// Save a string into a file.
+pub fn save_file(file_path: impl AsRef<std::path::Path>, source: &str) -> std::io::Result<()> {
+    std::fs::write(file_path, source)
+}
+
+/// Correct a start/stop/step range against an axis size.
+///
+/// This mirrors CLIc's `correct_range`, but returns the corrected tuple instead
+/// of mutating pointer arguments.
+pub fn correct_range(
+    start: Option<i32>,
+    stop: Option<i32>,
+    step: Option<i32>,
+    size: i32,
+) -> (i32, i32, i32) {
+    let step = step.unwrap_or(1);
+    let mut start = start.unwrap_or(if step >= 0 { 0 } else { size - 1 });
+    let mut stop = stop.unwrap_or(if step >= 0 { size } else { -1 });
+
+    if start >= size {
+        start = if step >= 0 { size } else { size - 1 };
+    }
+    if start < -size + 1 {
+        start = -size + 1;
+    }
+    if stop > size {
+        stop = size;
+    }
+    if stop < -size {
+        stop = if start > 0 { -1 } else { -size };
+    }
+    if start < 0 {
+        start = size - start;
+    }
+    if (start > stop && step > 0) || (start < stop && step < 0) {
+        stop = start;
+    }
+
+    (start, stop, step)
+}
+
+/// Convert a string to lowercase.
+pub fn to_lower(s: &str) -> String {
+    s.to_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +165,30 @@ mod tests {
         assert!(s >= 8);
         // 9 = 3^2
         assert!(next_smooth(9) >= 9);
+    }
+
+    #[test]
+    fn test_correct_range_defaults() {
+        assert_eq!(correct_range(None, None, None, 10), (0, 10, 1));
+        assert_eq!(correct_range(None, None, Some(-1), 10), (9, -1, -1));
+    }
+
+    #[test]
+    fn test_correct_range_clamps() {
+        assert_eq!(correct_range(Some(12), Some(20), Some(1), 10), (10, 10, 1));
+        assert_eq!(correct_range(Some(-20), Some(5), Some(1), 10), (19, 19, 1));
+    }
+
+    #[test]
+    fn test_to_lower() {
+        assert_eq!(to_lower("AbC"), "abc");
+    }
+
+    #[test]
+    fn test_load_save_file() {
+        let path = std::env::temp_dir().join(format!("clic_rs_utils_{}.txt", std::process::id()));
+        save_file(&path, "hello").unwrap();
+        assert_eq!(load_file(&path).unwrap(), "hello");
+        let _ = std::fs::remove_file(path);
     }
 }

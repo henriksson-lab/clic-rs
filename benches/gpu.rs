@@ -6,12 +6,12 @@
 // Each benchmark includes GPU execution + synchronization (device.finish()),
 // matching the measurement scope of the C++ benchmark in benchmark/clic_bench.cpp.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use clic_rs::{
     array::{pull, push},
     backend_manager::BackendManager,
     tier1, tier3,
 };
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 fn device() -> clic_rs::DeviceArc {
     BackendManager::get()
@@ -31,12 +31,16 @@ fn bench_gaussian_blur(c: &mut Criterion) {
         let src = push(&data, side, side, 1, &dev).unwrap();
 
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(format!("{side}x{side}")), &side, |b, _| {
-            b.iter(|| {
-                let _out = tier1::gaussian_blur(&dev, &src, None, 2.0, 2.0, 0.0).unwrap();
-                dev.finish();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{side}x{side}")),
+            &side,
+            |b, _| {
+                b.iter(|| {
+                    let _out = tier1::gaussian_blur(&dev, &src, None, 2.0, 2.0, 0.0).unwrap();
+                    dev.finish();
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -54,12 +58,17 @@ fn bench_add_images_weighted(c: &mut Criterion) {
         let src1 = push(&data, side, side, 1, &dev).unwrap();
 
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(format!("{side}x{side}")), &side, |b, _| {
-            b.iter(|| {
-                let _out = tier1::add_images_weighted(&dev, &src0, &src1, None, 0.5, 0.5).unwrap();
-                dev.finish();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{side}x{side}")),
+            &side,
+            |b, _| {
+                b.iter(|| {
+                    let _out =
+                        tier1::add_images_weighted(&dev, &src0, &src1, None, 0.5, 0.5).unwrap();
+                    dev.finish();
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -76,11 +85,15 @@ fn bench_mean_of_all_pixels(c: &mut Criterion) {
         let src = push(&data, side, side, 1, &dev).unwrap();
 
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(format!("{side}x{side}")), &side, |b, _| {
-            b.iter(|| {
-                let _mean = tier3::mean_of_all_pixels(&dev, &src).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{side}x{side}")),
+            &side,
+            |b, _| {
+                b.iter(|| {
+                    let _mean = tier3::mean_of_all_pixels(&dev, &src).unwrap();
+                });
+            },
+        );
     }
     group.finish();
 }
@@ -96,12 +109,16 @@ fn bench_push_pull(c: &mut Criterion) {
         let data = vec![1.0f32; n];
 
         group.throughput(Throughput::Bytes((n * 4) as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(format!("{side}x{side}")), &side, |b, _| {
-            b.iter(|| {
-                let arr = push(&data, side, side, 1, &dev).unwrap();
-                let _out: Vec<f32> = pull(&arr).unwrap();
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{side}x{side}")),
+            &side,
+            |b, _| {
+                b.iter(|| {
+                    let arr = push(&data, side, side, 1, &dev).unwrap();
+                    let _out: Vec<f32> = pull(&arr).unwrap();
+                });
+            },
+        );
     }
     group.finish();
 }

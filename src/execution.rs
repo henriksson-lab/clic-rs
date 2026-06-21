@@ -47,7 +47,10 @@ pub type KernelInfo<'a> = (&'a str, &'a str); // (name, source)
 
 /// Generate the `#define` preamble that CLIJ kernels expect, exactly matching
 /// CLIc's `generateDefines()` in `execution.cpp`.
-pub fn generate_defines(params: &[(&str, ParameterValue)], constants: &[(&str, ConstantValue)]) -> String {
+pub fn generate_defines(
+    params: &[(&str, ParameterValue)],
+    constants: &[(&str, ConstantValue)],
+) -> String {
     let mut out = String::with_capacity(4096);
 
     // 1. User-specified constants (e.g. `#define OP(x) fabs(x)`)
@@ -79,10 +82,17 @@ pub fn generate_defines(params: &[(&str, ParameterValue)], constants: &[(&str, C
         let dtype = arr.dtype();
 
         // Buffer path (the only path we support — IMAGE not yet implemented)
-        buffer_defines(&mut out, &ArrayDefineInfo {
-            key, dtype, dim,
-            width: arr.width(), height: arr.height(), depth: arr.depth(),
-        });
+        buffer_defines(
+            &mut out,
+            &ArrayDefineInfo {
+                key,
+                dtype,
+                dim,
+                width: arr.width(),
+                height: arr.height(),
+                depth: arr.depth(),
+            },
+        );
     }
 
     // 3. USE_<DTYPE> defines for all unique dtypes used
@@ -118,7 +128,14 @@ struct ArrayDefineInfo<'a> {
 /// Mirrors `bufferDefines()` in CLIc's `execution.cpp`.
 #[allow(clippy::too_many_arguments)]
 fn buffer_defines(out: &mut String, info: &ArrayDefineInfo) {
-    let ArrayDefineInfo { key, dtype, dim, width, height, depth } = *info;
+    let ArrayDefineInfo {
+        key,
+        dtype,
+        dim,
+        width,
+        height,
+        depth,
+    } = *info;
     let ndim_strs = ["1", "2", "3"];
     let pos_type_strs = ["int", "int2", "int4"];
     let pos_strs = ["(pos0)", "(pos0, pos1)", "(pos0, pos1, pos2, 0)"];
@@ -131,10 +148,14 @@ fn buffer_defines(out: &mut String, info: &ArrayDefineInfo) {
     let otype = dtype.to_ocl_str();
 
     // CONVERT, PIXEL_TYPE, POS_TYPE, POS_INSTANCE macros
-    out.push_str(&format!("\n#define CONVERT_{key}_PIXEL_TYPE clij_convert_{otype}_sat"));
+    out.push_str(&format!(
+        "\n#define CONVERT_{key}_PIXEL_TYPE clij_convert_{otype}_sat"
+    ));
     out.push_str(&format!("\n#define IMAGE_{key}_PIXEL_TYPE {otype}"));
     out.push_str(&format!("\n#define POS_{key}_TYPE {pos_type}"));
-    out.push_str(&format!("\n#define POS_{key}_INSTANCE(pos0,pos1,pos2,pos3) ({pos_type}){pos}"));
+    out.push_str(&format!(
+        "\n#define POS_{key}_INSTANCE(pos0,pos1,pos2,pos3) ({pos_type}){pos}"
+    ));
     out.push('\n');
 
     // Buffer-specific: type and read/write macros
@@ -169,7 +190,8 @@ pub fn execute(
     // Build full program source: defines + preamble + kernel
     let defines = generate_defines(params, constants);
     let preamble = BackendManager::get().backend().preamble();
-    let mut program_source = String::with_capacity(defines.len() + preamble.len() + kernel_source.len());
+    let mut program_source =
+        String::with_capacity(defines.len() + preamble.len() + kernel_source.len());
     program_source.push_str(&defines);
     program_source.push_str(preamble);
     program_source.push_str(kernel_source);
@@ -190,9 +212,14 @@ pub fn execute(
         }
     }
 
-    BackendManager::get()
-        .backend()
-        .execute_kernel(device, &program_source, kernel_name, global_range, local_range, &args)
+    BackendManager::get().backend().execute_kernel(
+        device,
+        &program_source,
+        kernel_name,
+        global_range,
+        local_range,
+        &args,
+    )
 }
 
 /// Execute a separable kernel (e.g. Gaussian blur) along each axis in turn.
@@ -216,22 +243,23 @@ pub fn execute_separable(
     let tmp1 = crate::array::Array::create_like(dst, device)?;
     let tmp2 = crate::array::Array::create_like(dst, device)?;
 
-    let execute_if_needed = |dim: usize, idx: usize, input: &ArrayPtr, output: &ArrayPtr| -> Result<()> {
-        if dim > 1 && sigma[idx] > 0.0 {
-            let params = vec![
-                ("src", ParameterValue::Array(input.clone())),
-                ("dst", ParameterValue::Array(output.clone())),
-                ("dim", ParameterValue::Int(idx as i32)),
-                ("N", ParameterValue::Int(radius[idx])),
-                ("s", ParameterValue::Float(sigma[idx])),
-                ("order", ParameterValue::Int(orders[idx])),
-            ];
-            execute(device, kernel, &params, global, [0, 0, 0], &[])
-        } else {
-            // Copy input → output unchanged
-            input.lock().unwrap().copy_to(output)
-        }
-    };
+    let execute_if_needed =
+        |dim: usize, idx: usize, input: &ArrayPtr, output: &ArrayPtr| -> Result<()> {
+            if dim > 1 && sigma[idx] > 0.0 {
+                let params = vec![
+                    ("src", ParameterValue::Array(input.clone())),
+                    ("dst", ParameterValue::Array(output.clone())),
+                    ("dim", ParameterValue::Int(idx as i32)),
+                    ("N", ParameterValue::Int(radius[idx])),
+                    ("s", ParameterValue::Float(sigma[idx])),
+                    ("order", ParameterValue::Int(orders[idx])),
+                ];
+                execute(device, kernel, &params, global, [0, 0, 0], &[])
+            } else {
+                // Copy input → output unchanged
+                input.lock().unwrap().copy_to(output)
+            }
+        };
 
     execute_if_needed(w, 0, src, &tmp1)?;
     execute_if_needed(h, 1, &tmp1, &tmp2)?;
@@ -270,19 +298,63 @@ impl ConstantValue {
     }
 }
 
-pub trait IntoParamValue { fn into_param(self) -> ParameterValue; }
-impl IntoParamValue for ArrayPtr { fn into_param(self) -> ParameterValue { ParameterValue::Array(self) } }
-impl IntoParamValue for &ArrayPtr { fn into_param(self) -> ParameterValue { ParameterValue::Array(self.clone()) } }
-impl IntoParamValue for f32 { fn into_param(self) -> ParameterValue { ParameterValue::Float(self) } }
-impl IntoParamValue for i32 { fn into_param(self) -> ParameterValue { ParameterValue::Int(self) } }
-impl IntoParamValue for u32 { fn into_param(self) -> ParameterValue { ParameterValue::Uint(self) } }
-impl IntoParamValue for usize { fn into_param(self) -> ParameterValue { ParameterValue::SizeT(self) } }
+pub trait IntoParamValue {
+    fn into_param(self) -> ParameterValue;
+}
+impl IntoParamValue for ArrayPtr {
+    fn into_param(self) -> ParameterValue {
+        ParameterValue::Array(self)
+    }
+}
+impl IntoParamValue for &ArrayPtr {
+    fn into_param(self) -> ParameterValue {
+        ParameterValue::Array(self.clone())
+    }
+}
+impl IntoParamValue for f32 {
+    fn into_param(self) -> ParameterValue {
+        ParameterValue::Float(self)
+    }
+}
+impl IntoParamValue for i32 {
+    fn into_param(self) -> ParameterValue {
+        ParameterValue::Int(self)
+    }
+}
+impl IntoParamValue for u32 {
+    fn into_param(self) -> ParameterValue {
+        ParameterValue::Uint(self)
+    }
+}
+impl IntoParamValue for usize {
+    fn into_param(self) -> ParameterValue {
+        ParameterValue::SizeT(self)
+    }
+}
 
-pub trait IntoConstValue { fn into_const(self) -> ConstantValue; }
-impl IntoConstValue for i32 { fn into_const(self) -> ConstantValue { ConstantValue::Int(self) } }
-impl IntoConstValue for f32 { fn into_const(self) -> ConstantValue { ConstantValue::Float(self) } }
-impl IntoConstValue for &str { fn into_const(self) -> ConstantValue { ConstantValue::Str(self.to_string()) } }
-impl IntoConstValue for String { fn into_const(self) -> ConstantValue { ConstantValue::Str(self) } }
+pub trait IntoConstValue {
+    fn into_const(self) -> ConstantValue;
+}
+impl IntoConstValue for i32 {
+    fn into_const(self) -> ConstantValue {
+        ConstantValue::Int(self)
+    }
+}
+impl IntoConstValue for f32 {
+    fn into_const(self) -> ConstantValue {
+        ConstantValue::Float(self)
+    }
+}
+impl IntoConstValue for &str {
+    fn into_const(self) -> ConstantValue {
+        ConstantValue::Str(self.to_string())
+    }
+}
+impl IntoConstValue for String {
+    fn into_const(self) -> ConstantValue {
+        ConstantValue::Str(self)
+    }
+}
 
 #[cfg(test)]
 mod tests {
