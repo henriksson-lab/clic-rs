@@ -58,18 +58,18 @@ pub fn threshold_otsu(
     let mut mean1 = vec![0.0; BIN];
     let mut mean2 = vec![0.0; BIN];
     let mut variance12 = vec![0.0; BIN - 1];
-    let mut running = 0.0;
+    let mut running_counts = 0.0_f32;
     for i in 0..BIN {
-        running += counts[i] as f64;
-        weight1[i] = running;
+        running_counts += counts[i];
+        weight1[i] = running_counts as f64;
     }
 
     // Compute weight2
     let reversed_counts = counts.iter().rev().copied().collect::<Vec<_>>();
-    running = 0.0;
+    running_counts = 0.0;
     for i in 0..BIN {
-        running += reversed_counts[i] as f64;
-        weight2[BIN - 1 - i] = running;
+        running_counts += reversed_counts[i];
+        weight2[BIN - 1 - i] = running_counts as f64;
     }
 
     // Compute mean1
@@ -77,7 +77,7 @@ pub fn threshold_otsu(
     for i in 0..BIN {
         counts_bin_centers[i] = counts[i] as f64 * bin_centers[i];
     }
-    running = 0.0;
+    let mut running = 0.0;
     for i in 0..BIN {
         running += counts_bin_centers[i];
         mean1[i] = running / weight1[i];
@@ -260,10 +260,10 @@ pub fn percentile(device: &DeviceArc, src: &ArrayPtr, percentile: f32) -> Result
 
     // compute cumulative sum of the vector frequency
     let mut cumulative_sum = vec![0.0; frequency.len()];
-    let mut running = 0.0;
+    let mut running = 0.0_f32;
     for i in 0..frequency.len() {
-        running += frequency[i] as f64;
-        cumulative_sum[i] = running;
+        running += frequency[i];
+        cumulative_sum[i] = running as f64;
     }
 
     // Calculate total frequency and target frequency

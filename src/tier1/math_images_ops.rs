@@ -53,6 +53,15 @@ fn apply_images_math_operation(
     Ok(dst)
 }
 
+pub fn power_images(
+    device: &DeviceArc,
+    src0: &ArrayPtr,
+    src1: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    apply_images_math_operation(device, src0, src1, dst, "pow(x, y)")
+}
+
 pub fn maximum_images(
     device: &DeviceArc,
     src0: &ArrayPtr,
@@ -71,6 +80,15 @@ pub fn minimum_images(
     apply_images_math_operation(device, src0, src1, dst, "fmin(x, y)")
 }
 
+pub fn modulo_images(
+    device: &DeviceArc,
+    src0: &ArrayPtr,
+    src1: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    apply_images_math_operation(device, src0, src1, dst, "fmod(x, y)")
+}
+
 pub fn multiply_images(
     device: &DeviceArc,
     src0: &ArrayPtr,
@@ -87,24 +105,6 @@ pub fn divide_images(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     apply_images_math_operation(device, src0, src1, dst, "(x / y)")
-}
-
-pub fn modulo_images(
-    device: &DeviceArc,
-    src0: &ArrayPtr,
-    src1: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    apply_images_math_operation(device, src0, src1, dst, "fmod(x, y)")
-}
-
-pub fn power_images(
-    device: &DeviceArc,
-    src0: &ArrayPtr,
-    src1: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    apply_images_math_operation(device, src0, src1, dst, "pow(x, y)")
 }
 
 pub fn greater(

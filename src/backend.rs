@@ -13,7 +13,7 @@ use opencl3::memory::{
 use opencl3::program::Program;
 use opencl3::types::{cl_channel_type, cl_image_desc, cl_image_format, cl_mem, CL_TRUE};
 
-use crate::device::{Device, DeviceArc, OpenCLDevice};
+use crate::device::{DeviceArc, OpenCLDevice};
 use crate::error::{CleError, Result};
 use crate::types::{to_bytes, DType, MType};
 
@@ -367,7 +367,7 @@ pub trait Backend: Send + Sync {
         args: &[KernelArg],
     ) -> Result<()>;
 
-    fn get_preamble(&self) -> &'static str;
+    fn get_preamble(&self) -> Result<&'static str>;
 }
 
 // ── Kernel argument types ────────────────────────────────────────────────────
@@ -543,9 +543,6 @@ impl OpenCLBackend {
         region: [usize; 3],
         host_data: &[u8],
     ) -> Result<()> {
-        if host_data.len() < region[0] * region[1] * region[2] {
-            return Err(CleError::DimensionMismatch);
-        }
         let opencl_device = Self::cast_device(device);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref() else {
             return Err(CleError::Other(
@@ -574,15 +571,10 @@ impl OpenCLBackend {
                     )
                     .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?
             } else {
+                let host_ptr = std::slice::from_raw_parts(host_data.as_ptr(), region[0]);
                 opencl_device
                     .queue
-                    .enqueue_write_buffer(
-                        &mut *guard,
-                        CL_TRUE,
-                        buffer_origin[0],
-                        &host_data[..region[0]],
-                        &[],
-                    )
+                    .enqueue_write_buffer(&mut *guard, CL_TRUE, buffer_origin[0], host_ptr, &[])
                     .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?
             }
         };
@@ -599,9 +591,6 @@ impl OpenCLBackend {
         region: [usize; 3],
         host_data: &mut [u8],
     ) -> Result<()> {
-        if host_data.len() < region[0] * region[1] * region[2] {
-            return Err(CleError::DimensionMismatch);
-        }
         let opencl_device = Self::cast_device(device);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref() else {
             return Err(CleError::Other(
@@ -630,15 +619,10 @@ impl OpenCLBackend {
                     )
                     .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?
             } else {
+                let host_ptr = std::slice::from_raw_parts_mut(host_data.as_mut_ptr(), region[0]);
                 opencl_device
                     .queue
-                    .enqueue_read_buffer(
-                        &guard,
-                        CL_TRUE,
-                        buffer_origin[0],
-                        &mut host_data[..region[0]],
-                        &[],
-                    )
+                    .enqueue_read_buffer(&guard, CL_TRUE, buffer_origin[0], host_ptr, &[])
                     .map_err(|e| CleError::OpenCL(format!("{:?}", e)))?
             }
         };
@@ -656,7 +640,7 @@ impl OpenCLBackend {
         dtype: DType,
         value: f32,
     ) -> Result<()> {
-        let ocl = Self::cast_device(device);
+        let opencl_device = Self::cast_device(device);
         let size = region[0] * region[1] * region[2] * to_bytes(dtype);
         let GpuMemory::Buffer(mutex_buf) = mem.as_ref() else {
             return Err(CleError::Other(
@@ -666,13 +650,21 @@ impl OpenCLBackend {
         let mut guard = mutex_buf.lock().unwrap();
 
         match dtype {
-            DType::Float => fill_buffer_typed(&ocl.queue, &mut *guard, size, value),
-            DType::Int32 => fill_buffer_typed(&ocl.queue, &mut *guard, size, value as i32),
-            DType::Uint32 => fill_buffer_typed(&ocl.queue, &mut *guard, size, value as u32),
-            DType::Int16 => fill_buffer_typed(&ocl.queue, &mut *guard, size, value as i16),
-            DType::Uint16 => fill_buffer_typed(&ocl.queue, &mut *guard, size, value as u16),
-            DType::Int8 => fill_buffer_typed(&ocl.queue, &mut *guard, size, value as i8),
-            DType::Uint8 => fill_buffer_typed(&ocl.queue, &mut *guard, size, value as u8),
+            DType::Float => fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value),
+            DType::Int32 => {
+                fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value as i32)
+            }
+            DType::Uint32 => {
+                fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value as u32)
+            }
+            DType::Int16 => {
+                fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value as i16)
+            }
+            DType::Uint16 => {
+                fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value as u16)
+            }
+            DType::Int8 => fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value as i8),
+            DType::Uint8 => fill_buffer_typed(&opencl_device.queue, &mut *guard, size, value as u8),
             _ => Err(CleError::InvalidDtype),
         }
     }
@@ -722,11 +714,6 @@ impl OpenCLBackend {
         dtype: DType,
     ) -> Result<GpuMemPtr> {
         let ocl = Self::cast_device(device);
-        if !ocl.support_image() {
-            return Err(CleError::Other(
-                "Error: OpenCL device does not support image memory".to_string(),
-            ));
-        }
 
         let image_format = cl_image_format {
             image_channel_order: CL_R,
@@ -1000,8 +987,8 @@ impl Drop for OpenCLBackend {
 }
 
 impl Backend for OpenCLBackend {
-    fn get_preamble(&self) -> &'static str {
-        include_str!("../kernels/preamble.cl")
+    fn get_preamble(&self) -> Result<&'static str> {
+        Ok(include_str!("../kernels/preamble.cl"))
     }
 
     fn allocate_memory(

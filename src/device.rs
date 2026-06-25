@@ -296,43 +296,48 @@ impl OpenCLDevice {
         let version = safe_get_device_info(device, CL_DEVICE_VERSION, OPENCL_NAME_BUFFER_SIZE);
         let vendor = safe_get_device_info(device, CL_DEVICE_VENDOR, OPENCL_NAME_BUFFER_SIZE);
         let driver = safe_get_device_info(device, CL_DRIVER_VERSION, OPENCL_NAME_BUFFER_SIZE);
+        let name = self.get_name();
         let compute_units = self._ocl_device.max_compute_units().unwrap_or(0);
-        let clock = self._ocl_device.max_clock_frequency().unwrap_or(0);
-        let global_mem = self._ocl_device.global_mem_size().unwrap_or(0);
-        let local_mem = self._ocl_device.local_mem_size().unwrap_or(0);
-        let max_mem = self._ocl_device.max_mem_alloc_size().unwrap_or(0);
+        let max_clock_frequency = self._ocl_device.max_clock_frequency().unwrap_or(0);
+        let global_mem_size = self._ocl_device.global_mem_size().unwrap_or(0);
+        let local_mem_size = self._ocl_device.local_mem_size().unwrap_or(0);
+        let max_mem_size = self._ocl_device.max_mem_alloc_size().unwrap_or(0);
         let image_support = self._ocl_device.image_support().unwrap_or(false);
         let device_type = self._ocl_device.dev_type().unwrap_or(0);
-        let device_type = get_device_type_map(true)
+        let device_type_str = get_device_type_map(true)
             .iter()
             .find_map(|(candidate, name)| (*candidate == device_type).then_some(*name))
             .unwrap_or("Unknown");
 
         let mut result = String::new();
-        let _ = writeln!(result, "({}) {} ({})", self.get_type(), self.name, version);
+        let _ = writeln!(result, "({}) {} ({})", self.get_type(), name, version);
         let _ = writeln!(result, "{:<30}{}", "\tVendor: ", vendor);
         let _ = writeln!(result, "{:<30}{}", "\tDriver Version: ", driver);
-        let _ = writeln!(result, "{:<30}{}", "\tDevice Type: ", device_type);
+        let _ = writeln!(result, "{:<30}{}", "\tDevice Type: ", device_type_str);
         let _ = writeln!(result, "{:<30}{}", "\tCompute Units: ", compute_units);
         let _ = writeln!(
             result,
             "{:<30}{} MB",
             "\tGlobal Memory Size: ",
-            global_mem / (1024 * 1024)
+            global_mem_size / (1024 * 1024)
         );
         let _ = writeln!(
             result,
             "{:<30}{} MB",
             "\tLocal Memory Size: ",
-            local_mem / (1024 * 1024)
+            local_mem_size / (1024 * 1024)
         );
         let _ = writeln!(
             result,
             "{:<30}{} MB",
             "\tMaximum Buffer Size: ",
-            max_mem / (1024 * 1024)
+            max_mem_size / (1024 * 1024)
         );
-        let _ = writeln!(result, "{:<30}{} MHz", "\tMax Clock Frequency: ", clock);
+        let _ = writeln!(
+            result,
+            "{:<30}{} MHz",
+            "\tMax Clock Frequency: ", max_clock_frequency
+        );
         let _ = writeln!(
             result,
             "{:<30}{}",

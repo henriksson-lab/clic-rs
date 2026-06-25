@@ -9,7 +9,7 @@ use crate::tier1;
 pub fn minimum_position(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<f32>> {
     let mut z_coord = 0usize;
     let mut y_coord = 0usize;
-    let x_coord: usize;
+    let x_coord;
     let mut coord = vec![0.0f32; 3];
 
     let mut temp = src.clone();
@@ -17,14 +17,14 @@ pub fn minimum_position(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<f32>> 
     let mut pos_y = None;
 
     if src.lock().unwrap().depth() > 1 {
-        let positions = tier1::z_position_of_minimum_z_projection(device, &temp, None)?;
+        let pos = tier1::z_position_of_minimum_z_projection(device, &temp, None)?;
         temp = tier1::minimum_z_projection(device, &temp, None)?;
-        pos_z = Some(positions);
+        pos_z = Some(pos);
     }
     if src.lock().unwrap().height() > 1 {
-        let positions = tier1::y_position_of_minimum_y_projection(device, &temp, None)?;
+        let pos = tier1::y_position_of_minimum_y_projection(device, &temp, None)?;
         temp = tier1::minimum_y_projection(device, &temp, None)?;
-        pos_y = Some(positions);
+        pos_y = Some(pos);
     }
 
     let pos_x = tier1::x_position_of_minimum_x_projection(device, &temp, None)?;
@@ -49,10 +49,9 @@ pub fn minimum_position(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<f32>> 
             .unwrap()
             .read_to_at(&mut value, x_coord, y_coord, 0)?;
         z_coord = value[0] as usize;
-        coord[2] = z_coord as f32;
     }
-
     coord[2] = z_coord as f32;
+
     let _ = temp;
 
     Ok(coord)

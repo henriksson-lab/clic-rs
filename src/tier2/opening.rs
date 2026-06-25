@@ -74,18 +74,6 @@ pub fn grayscale_opening(
     )
 }
 
-/// Grayscale opening (min filter then max filter) with box connectivity.
-pub fn opening_box(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    radius_x: f32,
-    radius_y: f32,
-    radius_z: f32,
-) -> Result<ArrayPtr> {
-    grayscale_opening(device, src, dst, radius_x, radius_y, radius_z, "box")
-}
-
 /// Grayscale opening with sphere connectivity.
 pub fn opening_sphere(
     device: &DeviceArc,
@@ -96,4 +84,16 @@ pub fn opening_sphere(
     radius_z: f32,
 ) -> Result<ArrayPtr> {
     grayscale_opening(device, src, dst, radius_x, radius_y, radius_z, "sphere")
+}
+
+/// Grayscale opening (min filter then max filter) with box connectivity.
+pub fn opening_box(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+    radius_x: f32,
+    radius_y: f32,
+    radius_z: f32,
+) -> Result<ArrayPtr> {
+    grayscale_opening(device, src, dst, radius_x, radius_y, radius_z, "box")
 }

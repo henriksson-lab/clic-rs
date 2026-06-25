@@ -24,18 +24,6 @@ pub fn standard_deviation(
     tier1::power(device, &temp, dst, 0.5)
 }
 
-/// Standard deviation filter with box connectivity.
-pub fn standard_deviation_box(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    radius_x: f32,
-    radius_y: f32,
-    radius_z: f32,
-) -> Result<ArrayPtr> {
-    standard_deviation(device, src, dst, radius_x, radius_y, radius_z, "box")
-}
-
 /// Standard deviation filter with sphere connectivity.
 pub fn standard_deviation_sphere(
     device: &DeviceArc,
@@ -46,4 +34,16 @@ pub fn standard_deviation_sphere(
     radius_z: f32,
 ) -> Result<ArrayPtr> {
     standard_deviation(device, src, dst, radius_x, radius_y, radius_z, "sphere")
+}
+
+/// Standard deviation filter with box connectivity.
+pub fn standard_deviation_box(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+    radius_x: f32,
+    radius_y: f32,
+    radius_z: f32,
+) -> Result<ArrayPtr> {
+    standard_deviation(device, src, dst, radius_x, radius_y, radius_z, "box")
 }

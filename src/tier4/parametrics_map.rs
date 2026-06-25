@@ -24,10 +24,15 @@ pub fn parametric_map(
     let dst = tier0::create_like(labels, dst, DType::Float, device)?;
     let props =
         tier3::statistics_of_background_and_labelled_pixels(device, Some(intensity), Some(labels))?;
-    let property = property.to_lowercase();
-    let vector = props.get(&property).ok_or_else(|| {
-        CleError::Other(format!("Property '{}' not found in statistics", property))
-    })?;
+    let lower_property_name = property.to_lowercase();
+    if !props.contains_key(&lower_property_name) {
+        return Err(CleError::Other(format!(
+            "Property '{}' not found in statistics",
+            property
+        )));
+    }
+
+    let vector = &props[&lower_property_name];
     let values = Array::create(vector.len(), 1, 1, 1, DType::Float, MType::Buffer, device)?;
     values.lock().unwrap().write_from(vector.as_slice())?;
     tier1::set_column(device, &values, 0, 0.0)?;

@@ -8,6 +8,22 @@ use crate::device::Device;
 use crate::error::{CleError, Result};
 
 const CUDA_DISABLED_ERROR: &str = "Error: CUDA is not enabled";
+const CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK: i32 = 8;
+const CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK: i32 = 12;
+const CU_DEVICE_ATTRIBUTE_WARP_SIZE: i32 = 10;
+const CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK: i32 = 1;
+const CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY: i32 = 9;
+const CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR: i32 = 75;
+const CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR: i32 = 76;
+const CU_DEVICE_ATTRIBUTE_CLOCK_RATE: i32 = 13;
+const CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT: i32 = 14;
+const CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT: i32 = 16;
+const CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X: i32 = 2;
+const CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y: i32 = 3;
+const CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z: i32 = 4;
+const CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X: i32 = 5;
+const CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y: i32 = 6;
+const CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z: i32 = 7;
 
 /// Disabled CUDA device placeholder for CLIc API parity.
 ///
@@ -87,8 +103,14 @@ impl CUDADevice {
 
     /// Canonical alias for CLIc's `CUDADevice::getArch()`.
     pub fn get_arch(&self) -> String {
-        let major = query_device_attribute(0, self.cuda_device_index);
-        let minor = query_device_attribute(0, self.cuda_device_index);
+        let major = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+            self.cuda_device_index,
+        );
+        let minor = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+            self.cuda_device_index,
+        );
         format!("{major}{minor}")
     }
 
@@ -127,22 +149,54 @@ impl CUDADevice {
         let driver_version = 0;
         let total_global_mem = 0usize;
 
-        let shared_mem_per_block = query_device_attribute(0, self.cuda_device_index);
-        let regs_per_block = query_device_attribute(0, self.cuda_device_index);
-        let warp_size = query_device_attribute(0, self.cuda_device_index);
-        let max_threads_per_block = query_device_attribute(0, self.cuda_device_index);
-        let total_const_mem = query_device_attribute(0, self.cuda_device_index);
-        let major = query_device_attribute(0, self.cuda_device_index);
-        let minor = query_device_attribute(0, self.cuda_device_index);
-        let clock_rate = query_device_attribute(0, self.cuda_device_index);
-        let texture_alignment = query_device_attribute(0, self.cuda_device_index);
-        let multi_proc_count = query_device_attribute(0, self.cuda_device_index);
-        let max_block_dim_x = query_device_attribute(0, self.cuda_device_index);
-        let max_block_dim_y = query_device_attribute(0, self.cuda_device_index);
-        let max_block_dim_z = query_device_attribute(0, self.cuda_device_index);
-        let max_grid_dim_x = query_device_attribute(0, self.cuda_device_index);
-        let max_grid_dim_y = query_device_attribute(0, self.cuda_device_index);
-        let max_grid_dim_z = query_device_attribute(0, self.cuda_device_index);
+        let shared_mem_per_block = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
+            self.cuda_device_index,
+        );
+        let regs_per_block = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK,
+            self.cuda_device_index,
+        );
+        let warp_size =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_WARP_SIZE, self.cuda_device_index);
+        let max_threads_per_block = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK,
+            self.cuda_device_index,
+        );
+        let total_const_mem = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY,
+            self.cuda_device_index,
+        );
+        let major = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+            self.cuda_device_index,
+        );
+        let minor = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+            self.cuda_device_index,
+        );
+        let clock_rate =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_CLOCK_RATE, self.cuda_device_index);
+        let texture_alignment = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_TEXTURE_ALIGNMENT,
+            self.cuda_device_index,
+        );
+        let multi_proc_count = query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT,
+            self.cuda_device_index,
+        );
+        let max_block_dim_x =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X, self.cuda_device_index);
+        let max_block_dim_y =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Y, self.cuda_device_index);
+        let max_block_dim_z =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_Z, self.cuda_device_index);
+        let max_grid_dim_x =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X, self.cuda_device_index);
+        let max_grid_dim_y =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Y, self.cuda_device_index);
+        let max_grid_dim_z =
+            query_device_attribute(CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_Z, self.cuda_device_index);
 
         let driver_version_f = driver_version as f32 / 1000.0;
         let mut result = format!(
@@ -229,15 +283,26 @@ impl Device for CUDADevice {
     }
 
     fn get_maximum_buffer_size(&self) -> usize {
-        0
+        let total_mem = 0usize;
+        let err = self.cuda_device_index == usize::MAX;
+        if err {
+            return 0;
+        }
+        total_mem
     }
 
     fn get_maximum_work_group_size(&self) -> usize {
-        0
+        query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK,
+            self.cuda_device_index,
+        ) as usize
     }
 
     fn get_local_memory_size(&self) -> usize {
-        0
+        query_device_attribute(
+            CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
+            self.cuda_device_index,
+        ) as usize
     }
 
     fn finish(&self) {
@@ -265,8 +330,13 @@ impl Device for CUDADevice {
 }
 
 /// Disabled equivalent of CLIc's CUDA `queryDeviceAttribute()` helper.
-fn query_device_attribute(_attribute: i32, _device: usize) -> i32 {
-    0
+fn query_device_attribute(_attrib: i32, _device: usize) -> i32 {
+    let value = 0;
+    let err = _device == usize::MAX;
+    if err {
+        return value;
+    }
+    value
 }
 
 /// Format a labelled CUDA info line like CLIc's `infoLine()` helper.

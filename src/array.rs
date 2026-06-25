@@ -105,6 +105,15 @@ impl Array {
         Ok(ptr)
     }
 
+    /// Create an array with the same shape, dtype, memory type, and device as
+    /// `src`. Mirrors CLIc's `Array::create(const Array::Pointer&)` overload.
+    pub fn create_from_array(src: &ArrayPtr) -> Result<ArrayPtr> {
+        let s = src.lock().unwrap();
+        Self::create(
+            s.width, s.height, s.depth, s.dim, s.dtype, s.mtype, &s.device,
+        )
+    }
+
     /// Wrap an existing GPU allocation. Mirrors CLIc's `createFromGPUMemory()`.
     pub fn create_from_gpu_memory(
         width: usize,
@@ -119,15 +128,6 @@ impl Array {
         Ok(Arc::new(Mutex::new(Self::from_gpu_memory(
             width, height, depth, dim, dtype, mtype, mem, device,
         ))))
-    }
-
-    /// Create an array with the same shape, dtype, memory type, and device as
-    /// `src`. Mirrors CLIc's `Array::create(const Array::Pointer&)` overload.
-    pub fn create_from_array(src: &ArrayPtr) -> Result<ArrayPtr> {
-        let s = src.lock().unwrap();
-        Self::create(
-            s.width, s.height, s.depth, s.dim, s.dtype, s.mtype, &s.device,
-        )
     }
 
     // ── Memory management ─────────────────────────────────────────────────────
@@ -501,16 +501,6 @@ impl Array {
         let origin = [0, 0, 0];
         let region = [self.width, self.height, self.depth];
         let shape = [self.width, self.height, self.depth];
-        match self.dtype {
-            DType::Float
-            | DType::Int8
-            | DType::Uint8
-            | DType::Int16
-            | DType::Uint16
-            | DType::Int32
-            | DType::Uint32 => {}
-            DType::Complex | DType::Unknown => return Err(CleError::InvalidDtype),
-        }
         let mem = self.mem.as_ref().ok_or(CleError::NotAllocated)?;
         BackendManager::get_instance().backend().set_memory_region(
             &self.device,
@@ -526,6 +516,13 @@ impl Array {
 
     // ── Accessors ─────────────────────────────────────────────────────────────
 
+    pub fn size(&self) -> usize {
+        self.width * self.height * self.depth
+    }
+    /// Total byte size. Mirrors CLIc's `bitsize()`.
+    pub fn bitsize(&self) -> usize {
+        self.size() * self.item_size()
+    }
     pub fn width(&self) -> usize {
         self.width
     }
@@ -535,12 +532,9 @@ impl Array {
     pub fn depth(&self) -> usize {
         self.depth
     }
-    pub fn dim(&self) -> usize {
-        shape_to_dimension(self.width, self.height, self.depth)
-    }
-    /// Explicit dimensionality passed at creation. Mirrors CLIc's `dimension()`.
-    pub fn dimension(&self) -> usize {
-        self.dim
+    /// Size in bytes of one array item. Mirrors CLIc's `itemSize()`.
+    pub fn item_size(&self) -> usize {
+        to_bytes(self.dtype)
     }
     pub fn dtype(&self) -> DType {
         self.dtype
@@ -551,24 +545,16 @@ impl Array {
     pub fn device(&self) -> &DeviceArc {
         &self.device
     }
-    pub fn size(&self) -> usize {
-        self.width * self.height * self.depth
+    pub fn dim(&self) -> usize {
+        shape_to_dimension(self.width, self.height, self.depth)
     }
-    /// Total byte size. Mirrors CLIc's `bitsize()`.
-    pub fn bitsize(&self) -> usize {
-        self.size() * self.item_size()
-    }
-    /// Size in bytes of one array item. Mirrors CLIc's `itemSize()`.
-    pub fn item_size(&self) -> usize {
-        to_bytes(self.dtype)
+    /// Explicit dimensionality passed at creation. Mirrors CLIc's `dimension()`.
+    pub fn dimension(&self) -> usize {
+        self.dim
     }
     /// Whether device memory is initialized. Mirrors CLIc's `initialized()`.
     pub fn initialized(&self) -> bool {
         self.mem.is_some()
-    }
-    /// Whether this array owns its device allocation. Mirrors CLIc's `ownsMemory()`.
-    pub fn owns_memory(&self) -> bool {
-        self.owns_memory
     }
 
     /// Return the raw GPU memory pointer. Mirrors CLIc's mutable `get()`.
@@ -582,6 +568,11 @@ impl Array {
     /// Return the shared GPU memory handle. Mirrors CLIc's `get_ptr()`.
     pub fn get_ptr(&self) -> Option<GpuMemPtr> {
         self.mem.clone()
+    }
+
+    /// Whether this array owns its device allocation. Mirrors CLIc's `ownsMemory()`.
+    pub fn owns_memory(&self) -> bool {
+        self.owns_memory
     }
 
     /// Validate an optional shared array handle. Mirrors CLIc's `Array::check_ptr()`.
@@ -745,9 +736,9 @@ mod tests {
     }
 
     #[test]
-    fn fill_rejects_unknown_dtype_before_backend() {
+    fn fill_defers_unknown_dtype_to_backend_path() {
         let arr = unallocated_array_with_type(DType::Unknown, MType::Buffer);
         let err = arr.fill(1.0).unwrap_err();
-        assert!(matches!(err, CleError::InvalidDtype));
+        assert!(matches!(err, CleError::NotAllocated));
     }
 }

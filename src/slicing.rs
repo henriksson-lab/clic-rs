@@ -272,6 +272,25 @@ fn replace_dtype(kernel_src: &str, dtype_str: &str) -> String {
     code
 }
 
+fn compute_output_dim(resolved: &[ResolvedSlice; 3]) -> usize {
+    let mut dim = 3usize;
+    for item in resolved {
+        if item.is_index {
+            dim -= 1;
+        }
+    }
+    dim.max(1)
+}
+
+fn is_contiguous(resolved: &[ResolvedSlice; 3]) -> bool {
+    for item in resolved {
+        if item.step != 1 {
+            return false;
+        }
+    }
+    true
+}
+
 fn output_shape(resolved: &[ResolvedSlice; 3]) -> [usize; 3] {
     [
         if resolved[0].is_index {
@@ -290,25 +309,6 @@ fn output_shape(resolved: &[ResolvedSlice; 3]) -> [usize; 3] {
             resolved[2].length
         },
     ]
-}
-
-fn compute_output_dim(resolved: &[ResolvedSlice; 3]) -> usize {
-    let mut dim = 3usize;
-    for item in resolved {
-        if item.is_index {
-            dim -= 1;
-        }
-    }
-    dim.max(1)
-}
-
-fn is_contiguous(resolved: &[ResolvedSlice; 3]) -> bool {
-    for item in resolved {
-        if item.step != 1 {
-            return false;
-        }
-    }
-    true
 }
 
 fn slice_contiguous(src: &ArrayPtr, resolved: &[ResolvedSlice; 3]) -> Result<ArrayPtr> {

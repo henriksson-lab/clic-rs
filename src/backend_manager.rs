@@ -27,69 +27,6 @@ impl BackendManager {
         }
     }
 
-    /// Canonical singleton alias for CLIc's `getInstance()`.
-    pub fn get_instance() -> RwLockReadGuard<'static, BackendManager> {
-        INSTANCE
-            .get_or_init(|| RwLock::new(BackendManager::new()))
-            .read()
-            .unwrap()
-    }
-
-    /// Access the active backend.
-    pub fn backend(&self) -> &dyn Backend {
-        self.backend.as_ref()
-    }
-
-    /// Canonical alias for CLIc's `getBackend()`.
-    pub fn get_backend(&self) -> &dyn Backend {
-        self.backend()
-    }
-
-    /// Replace the active backend ("opencl" is the only supported option currently).
-    pub fn set_backend(&mut self, name: &str) -> Result<()> {
-        let backend_map = [("opencl", "opencl")];
-
-        let Some((backend, backend_type)) = backend_map
-            .iter()
-            .find(|(backend_name, _)| *backend_name == name)
-        else {
-            let mut list = String::new();
-            for (backend_name, _) in backend_map {
-                if !list.is_empty() {
-                    list += ", ";
-                }
-                list += backend_name;
-            }
-            return Err(CleError::Other(format!(
-                "Unknown backend '{}'. This build supports: {}",
-                name,
-                if list.is_empty() { "none" } else { &list }
-            )));
-        };
-
-        let is_enabled = if *backend_type == "cuda" {
-            Self::cuda_enabled()
-        } else {
-            Self::opencl_enabled()
-        };
-        if !is_enabled {
-            let error_reason = if *backend_type == "cuda" {
-                Self::get_cuda_error()
-            } else {
-                Self::get_opencl_error()
-            };
-            return Err(CleError::Other(format!(
-                "Backend '{}' is not available: {}",
-                backend, error_reason
-            )));
-        }
-
-        if *backend_type == "opencl" {
-            self.backend = Box::new(OpenCLBackend::new());
-        }
-        Ok(())
-    }
-
     /// Whether CUDA is available. CUDA is not compiled into this Rust backend.
     pub fn cuda_enabled() -> bool {
         let compiled_with_cuda = false;
@@ -148,6 +85,58 @@ impl BackendManager {
         backends
     }
 
+    /// Canonical singleton alias for CLIc's `getInstance()`.
+    pub fn get_instance() -> RwLockReadGuard<'static, BackendManager> {
+        INSTANCE
+            .get_or_init(|| RwLock::new(BackendManager::new()))
+            .read()
+            .unwrap()
+    }
+
+    /// Replace the active backend ("opencl" is the only supported option currently).
+    pub fn set_backend(&mut self, backend: &str) -> Result<()> {
+        let backend_map = [("opencl", "opencl")];
+
+        let Some((backend_name, backend_type)) =
+            backend_map.iter().find(|(name, _)| *name == backend)
+        else {
+            let mut list = String::new();
+            for (name, _) in backend_map {
+                if !list.is_empty() {
+                    list += ", ";
+                }
+                list += name;
+            }
+            return Err(CleError::Other(format!(
+                "Unknown backend '{}'. This build supports: {}",
+                backend,
+                if list.is_empty() { "none" } else { &list }
+            )));
+        };
+
+        let is_enabled = if *backend_type == "cuda" {
+            Self::cuda_enabled()
+        } else {
+            Self::opencl_enabled()
+        };
+        if !is_enabled {
+            let error_reason = if *backend_type == "cuda" {
+                Self::get_cuda_error()
+            } else {
+                Self::get_opencl_error()
+            };
+            return Err(CleError::Other(format!(
+                "Backend '{}' is not available: {}",
+                backend_name, error_reason
+            )));
+        }
+
+        if *backend_type == "opencl" {
+            self.backend = Box::new(OpenCLBackend::new());
+        }
+        Ok(())
+    }
+
     /// Last CUDA availability error. Mirrors CLIc's `getCudaError()`.
     pub fn get_cuda_error() -> String {
         CUDA_ERROR.read().unwrap().clone()
@@ -156,6 +145,16 @@ impl BackendManager {
     /// Last OpenCL availability error. Mirrors CLIc's `getOpenCLError()`.
     pub fn get_opencl_error() -> String {
         OPENCL_ERROR.read().unwrap().clone()
+    }
+
+    /// Canonical alias for CLIc's `getBackend()`.
+    pub fn get_backend(&self) -> &dyn Backend {
+        self.backend()
+    }
+
+    /// Access the active backend.
+    pub fn backend(&self) -> &dyn Backend {
+        self.backend.as_ref()
     }
 
     /// Return the best available device (GPU preferred, any type as fallback).

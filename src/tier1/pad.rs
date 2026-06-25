@@ -29,9 +29,9 @@ pub fn pad(
         (dst.width(), dst.height(), dst.depth())
     };
 
-    let pad_x = src_width.abs_diff(size_x);
-    let pad_y = src_height.abs_diff(size_y);
-    let pad_z = src_depth.abs_diff(size_z);
+    let pad_x = (src_width as i32 - size_x as i32).abs() as usize;
+    let pad_y = (src_height as i32 - size_y as i32).abs() as usize;
+    let pad_z = (src_depth as i32 - size_z as i32).abs() as usize;
     let mut offset = [0, 0, 0];
     if center {
         offset = [
@@ -69,9 +69,9 @@ pub fn unpad(
         (dst.width(), dst.height(), dst.depth())
     };
 
-    let pad_x = src_width.abs_diff(size_x);
-    let pad_y = src_height.abs_diff(size_y);
-    let pad_z = src_depth.abs_diff(size_z);
+    let pad_x = (src_width as i32 - size_x as i32).abs() as usize;
+    let pad_y = (src_height as i32 - size_y as i32).abs() as usize;
+    let pad_z = (src_depth as i32 - size_z as i32).abs() as usize;
     let mut offset = [0, 0, 0];
     if center {
         offset = [

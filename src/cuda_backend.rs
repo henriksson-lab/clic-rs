@@ -243,8 +243,8 @@ impl Backend for CUDABackend {
         cuda_disabled!()
     }
 
-    fn get_preamble(&self) -> &'static str {
-        ""
+    fn get_preamble(&self) -> Result<&'static str> {
+        cuda_disabled!()
     }
 }
 
@@ -320,22 +320,20 @@ pub fn perform_memcpy() -> Result<()> {
 
 /// Disabled equivalent of CLIc's NVRTC `compileToPtx()` helper.
 pub fn compile_to_ptx(kernel_source: &str, arch: &str) -> Result<String> {
+    let _prog = kernel_source;
     let arch_opt = format!("--gpu-architecture=compute_{arch}");
     let warn_opt = "--disable-warnings";
     let options = [arch_opt.as_str(), warn_opt];
-    if kernel_source.trim().is_empty() {
-        return Err(CleError::Other(
-            "Error: Failed to create NVRTC program from empty source".to_string(),
-        ));
-    }
-    let compile_result = Err::<(), _>(CleError::Other(format!(
+    let res = Err::<(), _>(CleError::Other(format!(
         "{CUDA_DISABLED_ERROR}: NVRTC unavailable for options {} {}",
         options[0], options[1]
     )));
-    if let Err(err) = compile_result {
-        let build_log = "NVRTC is not compiled into this build";
+    if let Err(err) = res {
+        let log_size = "NVRTC is not compiled into this build".len();
+        let log = "NVRTC is not compiled into this build";
+        let _ = log_size;
         return Err(CleError::Other(format!(
-            "Error: Failed to compile kernel. {err}\nBuild log:\n{build_log}"
+            "Error: Failed to compile kernel. NVRTC error: {err}\nBuild log:\n{log}"
         )));
     }
     cuda_disabled!()
@@ -402,7 +400,7 @@ mod tests {
         let backend = CUDABackend::new();
         assert_eq!(backend.get_type(), "CUDA");
         assert!(backend.get_devices("gpu").is_err());
-        assert_eq!(backend.get_preamble(), "");
+        assert!(Backend::get_preamble(&backend).is_err());
     }
 
     #[test]

@@ -25,13 +25,6 @@ impl ProgramCache {
         }
     }
 
-    pub fn get(&mut self, key: &str) -> Option<Arc<Program>> {
-        let program = self.cache.get(key).cloned()?;
-        self.lru.retain(|item| item != key);
-        self.lru.push_back(key.to_string());
-        Some(program)
-    }
-
     pub fn put(&mut self, key: String, program: Arc<Program>) {
         if let Some(entry) = self.cache.get_mut(&key) {
             self.lru.retain(|item| item != &key);
@@ -48,6 +41,13 @@ impl ProgramCache {
 
         self.lru.push_back(key.clone());
         self.cache.insert(key, program);
+    }
+
+    pub fn get(&mut self, key: &str) -> Option<Arc<Program>> {
+        let program = self.cache.get(key).cloned()?;
+        self.lru.retain(|item| item != key);
+        self.lru.push_back(key.to_string());
+        Some(program)
     }
 
     pub fn contains(&self, key: &str) -> bool {
@@ -82,17 +82,6 @@ pub struct DiskCache {
 static DISK_CACHE: OnceLock<DiskCache> = OnceLock::new();
 
 impl DiskCache {
-    /// Access the global DiskCache singleton.
-    pub fn instance() -> &'static DiskCache {
-        DISK_CACHE.get_or_init(Self::new)
-    }
-
-    pub fn new() -> Self {
-        Self {
-            root: Self::resolve_cache_directory(),
-        }
-    }
-
     pub fn resolve_cache_directory() -> PathBuf {
         #[cfg(windows)]
         {
@@ -118,17 +107,15 @@ impl DiskCache {
         }
     }
 
-    /// Hash string of the given input (used for cache keys).
-    pub fn hash(input: &str) -> String {
-        let mut hasher = DefaultHasher::new();
-        input.hash(&mut hasher);
-        hasher.finish().to_string()
+    pub fn new() -> Self {
+        Self {
+            root: Self::resolve_cache_directory(),
+        }
     }
 
-    pub fn get_file_path(&self, device_hash: &str, source_hash: &str, ext: &str) -> PathBuf {
-        self.root
-            .join(device_hash)
-            .join(format!("{}.{}", source_hash, ext))
+    /// Access the global DiskCache singleton.
+    pub fn instance() -> &'static DiskCache {
+        DISK_CACHE.get_or_init(Self::new)
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -147,8 +134,35 @@ impl DiskCache {
         self.root.as_path()
     }
 
-    pub fn exists(&self, device_hash: &str, source_hash: &str, ext: &str) -> bool {
-        self.get_file_path(device_hash, source_hash, ext).exists()
+    pub fn get_file_path(&self, device_hash: &str, source_hash: &str, ext: &str) -> PathBuf {
+        self.root
+            .join(device_hash)
+            .join(format!("{}.{}", source_hash, ext))
+    }
+
+    /// Save a compiled binary to the disk cache.
+    pub fn save_binary(&self, device_hash: &str, source_hash: &str, ext: &str, data: &[u8]) {
+        let binary_path = self.get_file_path(device_hash, source_hash, ext);
+        if let Some(parent) = binary_path.parent() {
+            std::fs::create_dir_all(parent).unwrap_or_else(|_| {
+                panic!(
+                    "Error: Failed to open cache file for writing: {}",
+                    binary_path.display()
+                )
+            });
+        }
+        let mut outfile = std::fs::File::create(&binary_path).unwrap_or_else(|_| {
+            panic!(
+                "Error: Failed to open cache file for writing: {}",
+                binary_path.display()
+            )
+        });
+        outfile.write_all(data).unwrap_or_else(|_| {
+            panic!(
+                "Error: Failed to write cache file: {}",
+                binary_path.display()
+            )
+        });
     }
 
     /// Load a cached binary. Returns `None` if not found or unreadable.
@@ -203,29 +217,15 @@ impl DiskCache {
         Some(data)
     }
 
-    /// Save a compiled binary to the disk cache.
-    pub fn save_binary(&self, device_hash: &str, source_hash: &str, ext: &str, data: &[u8]) {
-        let binary_path = self.get_file_path(device_hash, source_hash, ext);
-        if let Some(parent) = binary_path.parent() {
-            std::fs::create_dir_all(parent).unwrap_or_else(|_| {
-                panic!(
-                    "Error: Failed to open cache file for writing: {}",
-                    binary_path.display()
-                )
-            });
-        }
-        let mut outfile = std::fs::File::create(&binary_path).unwrap_or_else(|_| {
-            panic!(
-                "Error: Failed to open cache file for writing: {}",
-                binary_path.display()
-            )
-        });
-        outfile.write_all(data).unwrap_or_else(|_| {
-            panic!(
-                "Error: Failed to write cache file: {}",
-                binary_path.display()
-            )
-        });
+    pub fn exists(&self, device_hash: &str, source_hash: &str, ext: &str) -> bool {
+        self.get_file_path(device_hash, source_hash, ext).exists()
+    }
+
+    /// Hash string of the given input (used for cache keys).
+    pub fn hash(input: &str) -> String {
+        let mut hasher = DefaultHasher::new();
+        input.hash(&mut hasher);
+        hasher.finish().to_string()
     }
 }
 

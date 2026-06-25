@@ -136,7 +136,7 @@ pub fn deconvolve_fft(
     device: &DeviceArc,
     src: &ArrayPtr,
     psf: &ArrayPtr,
-    normalization: Option<&ArrayPtr>,
+    normalization: Option<ArrayPtr>,
     dst: Option<ArrayPtr>,
     iteration: i32,
     regularization: f32,
@@ -207,7 +207,7 @@ pub fn deconvolve_fft(
     }
 
     // check if smooth size differs from the kernel size, if yes, pad the kernel
-    let mut pad_norm = normalization.cloned();
+    let mut pad_norm = normalization;
     if pad_norm.is_some() {
         let normalization = pad_norm.as_ref().unwrap();
         let norm_shape = {

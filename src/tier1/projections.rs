@@ -53,6 +53,84 @@ __kernel void std_projection(
 }
 "#;
 
+pub fn std_x_projection(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    let dst = tier0::create_zy(src, dst, DType::Float, device)?;
+    let params = vec![
+        ("src", ParameterValue::Array(src.clone())),
+        ("dst", ParameterValue::Array(dst.clone())),
+        ("axis", ParameterValue::Int(0)),
+    ];
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), 1]
+    };
+    execute(
+        device,
+        ("std_projection", STD_PROJECTION_SRC),
+        &params,
+        range,
+        [0, 0, 0],
+        &[],
+    )?;
+    Ok(dst)
+}
+
+pub fn std_y_projection(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    let dst = tier0::create_xz(src, dst, DType::Float, device)?;
+    let params = vec![
+        ("src", ParameterValue::Array(src.clone())),
+        ("dst", ParameterValue::Array(dst.clone())),
+        ("axis", ParameterValue::Int(1)),
+    ];
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), 1]
+    };
+    execute(
+        device,
+        ("std_projection", STD_PROJECTION_SRC),
+        &params,
+        range,
+        [0, 0, 0],
+        &[],
+    )?;
+    Ok(dst)
+}
+
+pub fn std_z_projection(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    let dst = tier0::create_xy(src, dst, DType::Float, device)?;
+    let params = vec![
+        ("src", ParameterValue::Array(src.clone())),
+        ("dst", ParameterValue::Array(dst.clone())),
+        ("axis", ParameterValue::Int(2)),
+    ];
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), 1]
+    };
+    execute(
+        device,
+        ("std_projection", STD_PROJECTION_SRC),
+        &params,
+        range,
+        [0, 0, 0],
+        &[],
+    )?;
+    Ok(dst)
+}
+
 pub fn maximum_x_projection(
     device: &DeviceArc,
     src: &ArrayPtr,
@@ -131,6 +209,93 @@ pub fn maximum_z_projection(
         (
             "maximum_projection",
             include_str!("../../kernels/maximum_projection.cl"),
+        ),
+        &params,
+        range,
+        [0, 0, 0],
+        &constants,
+    )?;
+    Ok(dst)
+}
+
+pub fn mean_x_projection(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    let dst = tier0::create_zy(src, dst, DType::Unknown, device)?;
+    let params = vec![
+        ("src", ParameterValue::Array(src.clone())),
+        ("dst", ParameterValue::Array(dst.clone())),
+    ];
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(0))];
+    execute(
+        device,
+        (
+            "mean_projection",
+            include_str!("../../kernels/mean_projection.cl"),
+        ),
+        &params,
+        range,
+        [0, 0, 0],
+        &constants,
+    )?;
+    Ok(dst)
+}
+
+pub fn mean_y_projection(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    let dst = tier0::create_xz(src, dst, DType::Unknown, device)?;
+    let params = vec![
+        ("src", ParameterValue::Array(src.clone())),
+        ("dst", ParameterValue::Array(dst.clone())),
+    ];
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(1))];
+    execute(
+        device,
+        (
+            "mean_projection",
+            include_str!("../../kernels/mean_projection.cl"),
+        ),
+        &params,
+        range,
+        [0, 0, 0],
+        &constants,
+    )?;
+    Ok(dst)
+}
+
+pub fn mean_z_projection(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+) -> Result<ArrayPtr> {
+    let dst = tier0::create_xy(src, dst, DType::Unknown, device)?;
+    let params = vec![
+        ("src", ParameterValue::Array(src.clone())),
+        ("dst", ParameterValue::Array(dst.clone())),
+    ];
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(2))];
+    execute(
+        device,
+        (
+            "mean_projection",
+            include_str!("../../kernels/mean_projection.cl"),
         ),
         &params,
         range,
@@ -310,171 +475,6 @@ pub fn sum_z_projection(
         range,
         [0, 0, 0],
         &constants,
-    )?;
-    Ok(dst)
-}
-
-pub fn mean_x_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_zy(src, dst, DType::Unknown, device)?;
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    let range = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), dst.depth()]
-    };
-    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(0))];
-    execute(
-        device,
-        (
-            "mean_projection",
-            include_str!("../../kernels/mean_projection.cl"),
-        ),
-        &params,
-        range,
-        [0, 0, 0],
-        &constants,
-    )?;
-    Ok(dst)
-}
-
-pub fn mean_y_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_xz(src, dst, DType::Unknown, device)?;
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    let range = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), dst.depth()]
-    };
-    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(1))];
-    execute(
-        device,
-        (
-            "mean_projection",
-            include_str!("../../kernels/mean_projection.cl"),
-        ),
-        &params,
-        range,
-        [0, 0, 0],
-        &constants,
-    )?;
-    Ok(dst)
-}
-
-pub fn mean_z_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_xy(src, dst, DType::Unknown, device)?;
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    let range = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), dst.depth()]
-    };
-    let constants = vec![("PROJECTION_AXIS", ConstantValue::Int(2))];
-    execute(
-        device,
-        (
-            "mean_projection",
-            include_str!("../../kernels/mean_projection.cl"),
-        ),
-        &params,
-        range,
-        [0, 0, 0],
-        &constants,
-    )?;
-    Ok(dst)
-}
-
-pub fn std_x_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_zy(src, dst, DType::Float, device)?;
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("axis", ParameterValue::Int(0)),
-    ];
-    let range = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), 1]
-    };
-    execute(
-        device,
-        ("std_projection", STD_PROJECTION_SRC),
-        &params,
-        range,
-        [0, 0, 0],
-        &[],
-    )?;
-    Ok(dst)
-}
-
-pub fn std_y_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_xz(src, dst, DType::Float, device)?;
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("axis", ParameterValue::Int(1)),
-    ];
-    let range = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), 1]
-    };
-    execute(
-        device,
-        ("std_projection", STD_PROJECTION_SRC),
-        &params,
-        range,
-        [0, 0, 0],
-        &[],
-    )?;
-    Ok(dst)
-}
-
-pub fn std_z_projection(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-) -> Result<ArrayPtr> {
-    let dst = tier0::create_xy(src, dst, DType::Float, device)?;
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("axis", ParameterValue::Int(2)),
-    ];
-    let range = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), 1]
-    };
-    execute(
-        device,
-        ("std_projection", STD_PROJECTION_SRC),
-        &params,
-        range,
-        [0, 0, 0],
-        &[],
     )?;
     Ok(dst)
 }

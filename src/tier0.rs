@@ -17,6 +17,27 @@ pub fn check_and_set(src: &ArrayPtr, dst: &Option<ArrayPtr>, dtype: &mut DType) 
     false
 }
 
+/// Create a destination array with explicit shape, preserving source memory type.
+pub fn create_dst(
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+    width: usize,
+    height: usize,
+    depth: usize,
+    mut force_dtype: DType,
+    _device: &DeviceArc,
+) -> Result<ArrayPtr> {
+    if check_and_set(src, &dst, &mut force_dtype) {
+        return Ok(dst.unwrap());
+    }
+    let s = src.lock().unwrap();
+    let mtype = s.mtype;
+    let device = s.device.clone();
+    drop(s);
+    let dim = shape_to_dimension(width, height, depth);
+    Array::create(width, height, depth, dim, force_dtype, mtype, &device)
+}
+
 /// Ensure `dst` is allocated like `src` (same shape, same dtype, or `force_dtype`).
 /// If `dst` is `None`, creates a new array.
 pub fn create_like(
@@ -36,27 +57,6 @@ pub fn create_like(
     let mtype = s.mtype;
     let device = s.device.clone();
     drop(s);
-    Array::create(width, height, depth, dim, force_dtype, mtype, &device)
-}
-
-/// Create a destination array with explicit shape, preserving source memory type.
-pub fn create_dst(
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    width: usize,
-    height: usize,
-    depth: usize,
-    mut force_dtype: DType,
-    _device: &DeviceArc,
-) -> Result<ArrayPtr> {
-    if check_and_set(src, &dst, &mut force_dtype) {
-        return Ok(dst.unwrap());
-    }
-    let s = src.lock().unwrap();
-    let mtype = s.mtype;
-    let device = s.device.clone();
-    drop(s);
-    let dim = shape_to_dimension(width, height, depth);
     Array::create(width, height, depth, dim, force_dtype, mtype, &device)
 }
 

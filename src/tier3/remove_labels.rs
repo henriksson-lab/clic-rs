@@ -40,8 +40,12 @@ pub fn remove_labels(
         }
     }
 
-    let index_list =
-        Array::create_with_data(list_size, 1, 1, 1, MType::Buffer, &labels_list, device)?;
+    let src_device = src.lock().unwrap().device().clone();
+    let index_list = Array::create(list_size, 1, 1, 1, LABEL, MType::Buffer, &src_device)?;
+    index_list
+        .lock()
+        .unwrap()
+        .write_from(labels_list.as_slice())?;
     tier1::replace_values(device, src, &index_list, Some(dst.clone()))?;
     Ok(dst)
 }

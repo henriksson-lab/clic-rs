@@ -9,14 +9,14 @@ use crate::types::DType;
 pub fn mask(
     device: &DeviceArc,
     src: &ArrayPtr,
-    mask_arr: &ArrayPtr,
+    mask: &ArrayPtr,
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
     let kernel = ("mask", include_str!("../../kernels/mask.cl"));
     let params = vec![
         ("src0", ParameterValue::Array(src.clone())),
-        ("src1", ParameterValue::Array(mask_arr.clone())),
+        ("src1", ParameterValue::Array(mask.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
     let range = {

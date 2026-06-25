@@ -71,19 +71,6 @@ pub fn binary_dilate(
     Ok(dst)
 }
 
-/// Grayscale dilation with box or sphere connectivity.
-pub fn grayscale_dilate(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dst: Option<ArrayPtr>,
-    radius_x: f32,
-    radius_y: f32,
-    radius_z: f32,
-    connectivity: &str,
-) -> Result<ArrayPtr> {
-    crate::tier1::maximum_filter(device, src, dst, radius_x, radius_y, radius_z, connectivity)
-}
-
 /// Morphological box dilation.
 pub fn dilate_box(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
     binary_dilate(device, src, dst, 1.0, 1.0, 1.0, "box")
@@ -96,4 +83,17 @@ pub fn dilate_sphere(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     binary_dilate(device, src, dst, 1.0, 1.0, 1.0, "sphere")
+}
+
+/// Grayscale dilation with box or sphere connectivity.
+pub fn grayscale_dilate(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    dst: Option<ArrayPtr>,
+    radius_x: f32,
+    radius_y: f32,
+    radius_z: f32,
+    connectivity: &str,
+) -> Result<ArrayPtr> {
+    crate::tier1::maximum_filter(device, src, dst, radius_x, radius_y, radius_z, connectivity)
 }

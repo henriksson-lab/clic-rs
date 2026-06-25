@@ -12,11 +12,18 @@ pub fn generate_distance_matrix(
     device: &DeviceArc,
     coordinate_list1: &ArrayPtr,
     coordinate_list2: &ArrayPtr,
-    dst: Option<ArrayPtr>,
+    distance_matrix_destination: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let width = coordinate_list1.lock().unwrap().width() + 1;
-    let distance_matrix_destination =
-        tier0::create_dst(coordinate_list1, dst, width, width, 1, DType::Float, device)?;
+    let distance_matrix_destination = tier0::create_dst(
+        coordinate_list1,
+        distance_matrix_destination,
+        width,
+        width,
+        1,
+        DType::Float,
+        device,
+    )?;
     distance_matrix_destination.lock().unwrap().fill(0.0)?;
     let kernel = (
         "generate_distance_matrix",

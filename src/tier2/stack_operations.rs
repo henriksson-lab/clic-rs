@@ -29,7 +29,8 @@ pub fn reduce_stack(
     reduction_factor: i32,
     offset: i32,
 ) -> Result<ArrayPtr> {
-    let reduction_factor = reduction_factor.max(1);
+    let mut reduction_factor = reduction_factor;
+    reduction_factor = reduction_factor.max(1);
     let (width, height, depth, dtype) = {
         let src = src.lock().unwrap();
         (src.width(), src.height(), src.depth(), src.dtype)

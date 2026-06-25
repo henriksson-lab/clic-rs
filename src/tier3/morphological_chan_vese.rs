@@ -27,11 +27,17 @@ fn create_checkerboard_init(_src: &ArrayPtr, dst: &ArrayPtr, square_size: usize)
     dst.lock().unwrap().write_from(&checkerboard)
 }
 
-fn compute_contour_score(device: &DeviceArc, image: &ArrayPtr, contour: &ArrayPtr) -> Result<f32> {
+fn compute_contour_score(
+    device: &DeviceArc,
+    image: &ArrayPtr,
+    contour: &ArrayPtr,
+    c: &mut f32,
+) -> Result<()> {
     let masked = tier1::mask(device, image, contour, None)?;
     let sum_image_value = tier2::sum_of_all_pixels(device, &masked)?;
     let sum_contour_value = tier2::sum_of_all_pixels(device, contour)? + 1e-8;
-    Ok(-sum_image_value / sum_contour_value)
+    *c = -sum_image_value / sum_contour_value;
+    Ok(())
 }
 
 fn compute_gradient_magnitude(
@@ -161,8 +167,8 @@ pub fn morphological_chan_vese(
     // enforce contour (dst) to be binary
     tier1::greater_constant(device, &dst, Some(dst.clone()), 0.0)?;
 
-    let mut c0: f32;
-    let mut c1: f32;
+    let mut c0 = 0.0_f32;
+    let mut c1 = 0.0_f32;
     let outside_contour = Array::create_from_array(&dst)?;
     let (width, height, depth, dim) = {
         let dst = dst.lock().unwrap();
@@ -181,10 +187,10 @@ pub fn morphological_chan_vese(
     let mut ite = 0;
     while ite < num_iter {
         // compute of inside contour score
-        c1 = compute_contour_score(device, src, &dst)?;
+        compute_contour_score(device, src, &dst, &mut c1)?;
         // compute of outside contour score (on inverted dst)
         tier1::binary_not(device, &dst, Some(outside_contour.clone()))?;
-        c0 = compute_contour_score(device, src, &outside_contour)?;
+        compute_contour_score(device, src, &outside_contour, &mut c0)?;
 
         // compute gradient magnitude into temp_3
         compute_gradient_magnitude(device, &dst, &gradient_magnitude)?;

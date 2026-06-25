@@ -9,9 +9,9 @@ use crate::utils::shape_to_dimension;
 
 #[allow(clippy::too_many_arguments)]
 fn coordinate_generator(
-    width: usize,
-    height: usize,
-    depth: usize,
+    width: i32,
+    height: i32,
+    depth: i32,
     delta_x: f32,
     delta_y: f32,
     delta_z: f32,
@@ -82,9 +82,9 @@ fn coordinate_generator(
 #[allow(clippy::too_many_arguments)]
 pub fn artificial_tissue(
     device: &DeviceArc,
-    width: usize,
-    height: usize,
-    depth: usize,
+    width: i32,
+    height: i32,
+    depth: i32,
     delta_x: f32,
     delta_y: f32,
     delta_z: f32,
@@ -92,8 +92,19 @@ pub fn artificial_tissue(
     sigma_y: f32,
     sigma_z: f32,
 ) -> Result<ArrayPtr> {
-    let dim = shape_to_dimension(width, height, depth);
-    let dst = Array::create(width, height, depth, dim, LABEL, MType::Buffer, device)?;
+    let width_usize = width as usize;
+    let height_usize = height as usize;
+    let depth_usize = depth as usize;
+    let dim = shape_to_dimension(width_usize, height_usize, depth_usize);
+    let dst = Array::create(
+        width_usize,
+        height_usize,
+        depth_usize,
+        dim,
+        LABEL,
+        MType::Buffer,
+        device,
+    )?;
 
     let (mut x_coords, mut y_coords, mut z_coords) = coordinate_generator(
         width, height, depth, delta_x, delta_y, delta_z, sigma_x, sigma_y, sigma_z,

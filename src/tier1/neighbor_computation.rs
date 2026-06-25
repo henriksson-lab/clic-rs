@@ -13,7 +13,7 @@ pub fn mean_of_touching_neighbors(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(vector, dst, DType::Float, device)?;
-    let x_correction = {
+    let x_corr = {
         let vector = vector.lock().unwrap();
         let matrix = matrix.lock().unwrap();
         if matrix.width() == vector.size() + 1 {
@@ -26,7 +26,7 @@ pub fn mean_of_touching_neighbors(
         ("src_vector", ParameterValue::Array(vector.clone())),
         ("src_matrix", ParameterValue::Array(matrix.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("x_correction", ParameterValue::Int(x_correction)),
+        ("x_correction", ParameterValue::Int(x_corr)),
     ];
     let range = {
         let dst = dst.lock().unwrap();
@@ -54,7 +54,7 @@ pub fn median_of_touching_neighbors(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(vector, dst, DType::Float, device)?;
-    let x_correction = {
+    let x_corr = {
         let vector = vector.lock().unwrap();
         let matrix = matrix.lock().unwrap();
         if matrix.width() == vector.size() + 1 {
@@ -67,7 +67,7 @@ pub fn median_of_touching_neighbors(
         ("src_vector", ParameterValue::Array(vector.clone())),
         ("src_matrix", ParameterValue::Array(matrix.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("x_correction", ParameterValue::Int(x_correction)),
+        ("x_correction", ParameterValue::Int(x_corr)),
     ];
     let range = {
         let dst = dst.lock().unwrap();
@@ -96,7 +96,7 @@ pub fn minimum_of_touching_neighbors(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(vector, dst, DType::Float, device)?;
-    let x_correction = {
+    let x_corr = {
         let vector = vector.lock().unwrap();
         let matrix = matrix.lock().unwrap();
         if matrix.width() == vector.size() + 1 {
@@ -109,7 +109,7 @@ pub fn minimum_of_touching_neighbors(
         ("src_vector", ParameterValue::Array(vector.clone())),
         ("src_matrix", ParameterValue::Array(matrix.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("x_correction", ParameterValue::Int(x_correction)),
+        ("x_correction", ParameterValue::Int(x_corr)),
     ];
     let range = {
         let dst = dst.lock().unwrap();
@@ -137,7 +137,7 @@ pub fn maximum_of_touching_neighbors(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(vector, dst, DType::Float, device)?;
-    let x_correction = {
+    let x_corr = {
         let vector = vector.lock().unwrap();
         let matrix = matrix.lock().unwrap();
         if matrix.width() == vector.size() + 1 {
@@ -150,7 +150,7 @@ pub fn maximum_of_touching_neighbors(
         ("src_vector", ParameterValue::Array(vector.clone())),
         ("src_matrix", ParameterValue::Array(matrix.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("x_correction", ParameterValue::Int(x_correction)),
+        ("x_correction", ParameterValue::Int(x_corr)),
     ];
     let range = {
         let dst = dst.lock().unwrap();
@@ -178,7 +178,7 @@ pub fn standard_deviation_of_touching_neighbors(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(vector, dst, DType::Float, device)?;
-    let x_correction = {
+    let x_corr = {
         let vector = vector.lock().unwrap();
         let matrix = matrix.lock().unwrap();
         if matrix.width() == vector.size() + 1 {
@@ -191,7 +191,7 @@ pub fn standard_deviation_of_touching_neighbors(
         ("src_vector", ParameterValue::Array(vector.clone())),
         ("src_matrix", ParameterValue::Array(matrix.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("x_correction", ParameterValue::Int(x_correction)),
+        ("x_correction", ParameterValue::Int(x_corr)),
     ];
     let range = {
         let dst = dst.lock().unwrap();
@@ -219,7 +219,7 @@ pub fn mode_of_touching_neighbors(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(vector, dst, DType::Float, device)?;
-    let x_correction = {
+    let x_corr = {
         let vector = vector.lock().unwrap();
         let matrix = matrix.lock().unwrap();
         if matrix.width() == vector.size() + 1 {
@@ -232,7 +232,7 @@ pub fn mode_of_touching_neighbors(
         ("src_vector", ParameterValue::Array(vector.clone())),
         ("src_matrix", ParameterValue::Array(matrix.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("x_correction", ParameterValue::Int(x_correction)),
+        ("x_correction", ParameterValue::Int(x_corr)),
     ];
     let range = {
         let dst = dst.lock().unwrap();

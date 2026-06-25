@@ -355,8 +355,8 @@ mod gpu {
             &dev,
         )
         .unwrap();
-        let out = tier2::difference_of_gaussian(&dev, &src, None, [1.0, 1.0, 1.0], [3.0, 3.0, 3.0])
-            .unwrap();
+        let out =
+            tier2::difference_of_gaussian(&dev, &src, None, 1.0, 1.0, 1.0, 3.0, 3.0, 3.0).unwrap();
         let result: Vec<f32> = {
             let lock = out.lock().unwrap();
             let mut data = vec![<f32>::default(); lock.size()];

@@ -133,6 +133,15 @@ impl Drop for VkfftPlan {
     }
 }
 
+/// Get the padded shape needed to avoid circular convolution artifacts.
+pub fn fft_pad_shape(image_shape: [usize; 3], kernel_shape: [usize; 3]) -> [usize; 3] {
+    [
+        image_shape[0] + 2 * (kernel_shape[0] / 2),
+        image_shape[1] + 2 * (kernel_shape[1] / 2),
+        image_shape[2] + 2 * (kernel_shape[2] / 2),
+    ]
+}
+
 /// Create a hermitian complex buffer matching CLIc's FFT output layout.
 ///
 /// CLIc stores complex values interleaved in a buffer shaped as
@@ -150,15 +159,6 @@ pub fn create_hermitian(input: &ArrayPtr) -> Result<ArrayPtr> {
         input.mtype(),
         input.device(),
     )
-}
-
-/// Get the padded shape needed to avoid circular convolution artifacts.
-pub fn fft_pad_shape(image_shape: [usize; 3], kernel_shape: [usize; 3]) -> [usize; 3] {
-    [
-        image_shape[0] + 2 * (kernel_shape[0] / 2),
-        image_shape[1] + 2 * (kernel_shape[1] / 2),
-        image_shape[2] + 2 * (kernel_shape[2] / 2),
-    ]
 }
 
 pub fn configure(array: &ArrayPtr, configuration: &mut FftConfiguration) {

@@ -8,6 +8,110 @@ use crate::types::{DType, MType};
 
 pub type StatisticsMap = std::collections::HashMap<String, Vec<f32>>;
 
+pub fn _statistics_per_label(
+    device: &DeviceArc,
+    label: &ArrayPtr,
+    intensity: &ArrayPtr,
+    nb_labels: i32,
+) -> Result<ArrayPtr> {
+    let min_value = f32::MIN;
+    let max_value = f32::MAX;
+    let (height, depth) = {
+        let label = label.lock().unwrap();
+        (label.height(), label.depth())
+    };
+
+    let cumulative_stats_per_label = Array::create(
+        nb_labels as usize,
+        height,
+        16,
+        3,
+        DType::Float,
+        MType::Buffer,
+        device,
+    )?;
+    cumulative_stats_per_label.lock().unwrap().fill(0.0)?;
+
+    for i in 8..=15 {
+        let value = if i % 2 == 0 { max_value } else { min_value };
+        tier1::set_plane(device, &cumulative_stats_per_label, i, value)?;
+    }
+
+    let kernel = (
+        "statistics_per_label",
+        include_str!("../kernels/statistics_per_label.cl"),
+    );
+    let range = [1, height, 1];
+    let mut params = vec![
+        ("src_label", ParameterValue::Array(label.clone())),
+        ("src_image", ParameterValue::Array(intensity.clone())),
+        (
+            "dst",
+            ParameterValue::Array(cumulative_stats_per_label.clone()),
+        ),
+        ("sum_background", ParameterValue::Int(0)),
+        ("z", ParameterValue::Int(0)),
+    ];
+    for z in 0..depth {
+        let it = params
+            .iter_mut()
+            .find(|param| param.0 == "z")
+            .expect("z parameter exists");
+        it.1 = ParameterValue::Int(z as i32);
+        execute(device, kernel, &params, range, [0, 0, 0], &[])?;
+    }
+
+    Ok(cumulative_stats_per_label)
+}
+
+pub fn _std_per_label(
+    device: &DeviceArc,
+    statistics: &ArrayPtr,
+    label: &ArrayPtr,
+    intensity: &ArrayPtr,
+    nb_labels: i32,
+) -> Result<ArrayPtr> {
+    let (height, depth) = {
+        let label = label.lock().unwrap();
+        (label.height(), label.depth())
+    };
+
+    let label_statistics_stack = Array::create(
+        nb_labels as usize,
+        height,
+        6,
+        3,
+        DType::Float,
+        MType::Buffer,
+        device,
+    )?;
+    label_statistics_stack.lock().unwrap().fill(0.0)?;
+
+    let kernel_std = (
+        "standard_deviation_per_label",
+        include_str!("../kernels/standard_deviation_per_label.cl"),
+    );
+    let range_std = [1, height, 1];
+    let mut params_std = vec![
+        ("src_statistics", ParameterValue::Array(statistics.clone())),
+        ("src_label", ParameterValue::Array(label.clone())),
+        ("src_image", ParameterValue::Array(intensity.clone())),
+        ("dst", ParameterValue::Array(label_statistics_stack.clone())),
+        ("sum_background", ParameterValue::Int(0)),
+        ("z", ParameterValue::Int(0)),
+    ];
+    for z in 0..depth {
+        let it = params_std
+            .iter_mut()
+            .find(|param| param.0 == "z")
+            .expect("z parameter exists");
+        it.1 = ParameterValue::Int(z as i32);
+        execute(device, kernel_std, &params_std, range_std, [0, 0, 0], &[])?;
+    }
+
+    Ok(label_statistics_stack)
+}
+
 pub fn compute_statistics_per_labels(
     device: &DeviceArc,
     label: &ArrayPtr,
@@ -412,98 +516,4 @@ pub fn compute_statistics_per_labels(
     );
 
     Ok(region_props)
-}
-
-pub fn _statistics_per_label(
-    device: &DeviceArc,
-    label: &ArrayPtr,
-    intensity: &ArrayPtr,
-    nb_labels: i32,
-) -> Result<ArrayPtr> {
-    let min_value = f32::MIN;
-    let max_value = f32::MAX;
-    let (height, depth) = {
-        let label = label.lock().unwrap();
-        (label.height(), label.depth())
-    };
-
-    let cumulative_stats_per_label = Array::create(
-        nb_labels as usize,
-        height,
-        16,
-        3,
-        DType::Float,
-        MType::Buffer,
-        device,
-    )?;
-    cumulative_stats_per_label.lock().unwrap().fill(0.0)?;
-
-    for i in 8..=15 {
-        let value = if i % 2 == 0 { max_value } else { min_value };
-        tier1::set_plane(device, &cumulative_stats_per_label, i, value)?;
-    }
-
-    let kernel = (
-        "statistics_per_label",
-        include_str!("../kernels/statistics_per_label.cl"),
-    );
-    let range = [1, height, 1];
-    for z in 0..depth {
-        let params = vec![
-            ("src_label", ParameterValue::Array(label.clone())),
-            ("src_image", ParameterValue::Array(intensity.clone())),
-            (
-                "dst",
-                ParameterValue::Array(cumulative_stats_per_label.clone()),
-            ),
-            ("sum_background", ParameterValue::Int(0)),
-            ("z", ParameterValue::Int(z as i32)),
-        ];
-        execute(device, kernel, &params, range, [0, 0, 0], &[])?;
-    }
-
-    Ok(cumulative_stats_per_label)
-}
-
-pub fn _std_per_label(
-    device: &DeviceArc,
-    statistics: &ArrayPtr,
-    label: &ArrayPtr,
-    intensity: &ArrayPtr,
-    nb_labels: i32,
-) -> Result<ArrayPtr> {
-    let (height, depth) = {
-        let label = label.lock().unwrap();
-        (label.height(), label.depth())
-    };
-
-    let label_statistics_stack = Array::create(
-        nb_labels as usize,
-        height,
-        6,
-        3,
-        DType::Float,
-        MType::Buffer,
-        device,
-    )?;
-    label_statistics_stack.lock().unwrap().fill(0.0)?;
-
-    let kernel_std = (
-        "standard_deviation_per_label",
-        include_str!("../kernels/standard_deviation_per_label.cl"),
-    );
-    let range_std = [1, height, 1];
-    for z in 0..depth {
-        let params_std = vec![
-            ("src_statistics", ParameterValue::Array(statistics.clone())),
-            ("src_label", ParameterValue::Array(label.clone())),
-            ("src_image", ParameterValue::Array(intensity.clone())),
-            ("dst", ParameterValue::Array(label_statistics_stack.clone())),
-            ("sum_background", ParameterValue::Int(0)),
-            ("z", ParameterValue::Int(z as i32)),
-        ];
-        execute(device, kernel_std, &params_std, range_std, [0, 0, 0], &[])?;
-    }
-
-    Ok(label_statistics_stack)
 }

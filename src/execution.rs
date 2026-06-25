@@ -220,7 +220,7 @@ pub fn execute(
     let mut kernel_source = kernel_source;
     let mut kernel_preamble = BackendManager::get_instance()
         .backend()
-        .get_preamble()
+        .get_preamble()?
         .to_string();
     let platform = device.get_platform();
     let device_is_cuda = platform == "CUDA" || platform == "NVIDIA";
@@ -355,11 +355,11 @@ pub fn evaluate(
     }
 
     // Extract variable names from expression, in order of first appearance
-    let variable_names = extract_variable_names(expression);
-    if variable_names.len() != parameters.len() {
+    let var_names = extract_variable_names(expression);
+    if var_names.len() != parameters.len() {
         return Err(CleError::Other(format!(
             "Error: expression has {} variable(s) but {} parameter(s) were provided.",
-            variable_names.len(),
+            var_names.len(),
             parameters.len()
         )));
     }
@@ -375,13 +375,16 @@ pub fn evaluate(
 
     struct ScalarParam {
         name: String,
-        value: f32,
+        val: f32,
     }
 
     let mut arrays = Vec::new();
     let mut scalars = Vec::new();
 
-    for (name, param) in variable_names.iter().zip(parameters.iter()) {
+    for idx in 0..parameters.len() {
+        let param = &parameters[idx];
+        let name = &var_names[idx];
+
         match param {
             ParameterValue::Array(array) => {
                 let size = {
@@ -407,19 +410,19 @@ pub fn evaluate(
             }
             ParameterValue::Float(value) => scalars.push(ScalarParam {
                 name: name.clone(),
-                value: *value,
+                val: *value,
             }),
             ParameterValue::Int(value) => scalars.push(ScalarParam {
                 name: name.clone(),
-                value: *value as f32,
+                val: *value as f32,
             }),
             ParameterValue::Uint(value) => scalars.push(ScalarParam {
                 name: name.clone(),
-                value: *value as f32,
+                val: *value as f32,
             }),
             ParameterValue::SizeT(value) => scalars.push(ScalarParam {
                 name: name.clone(),
-                value: *value as f32,
+                val: *value as f32,
             }),
         }
     }
@@ -516,7 +519,7 @@ pub fn evaluate(
 
     // Scalars (all as float)
     for scalar in scalars {
-        args.push(KernelArg::Float(scalar.value));
+        args.push(KernelArg::Float(scalar.val));
     }
 
     // Total size parameter
