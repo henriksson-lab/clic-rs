@@ -15,7 +15,7 @@ pub fn flag_existing_labels(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let max_label = tier2::maximum_of_all_pixels(device, src)? as usize;
-    let dst = tier0::create_vector_like(src, dst, max_label + 1, LABEL, device)?;
+    let dst = tier0::create_vector(src, dst, max_label + 1, LABEL, device)?;
     dst.lock().unwrap().fill(0.0)?;
 
     let global = {

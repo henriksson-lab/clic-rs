@@ -21,10 +21,7 @@ pub fn crop(
     depth: usize,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_dst(src, dst, width, height, depth, DType::Unknown, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let kernel = ("crop", include_str!("../../kernels/crop.cl"));
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
@@ -32,13 +29,10 @@ pub fn crop(
         ("index1", ParameterValue::Int(start_y)),
         ("index2", ParameterValue::Int(start_z)),
     ];
-    execute(
-        device,
-        ("crop", include_str!("../../kernels/crop.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

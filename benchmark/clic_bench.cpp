@@ -63,9 +63,10 @@ static double measure_us(Fn fn, int warmup = 3, int samples = 16)
     return std::accumulate(times.begin(), times.end(), 0.0) / samples;
 }
 
-static void print_result(const std::string& name, double mean_us)
+static void print_result(const std::string& function, const std::string& size, double mean_us)
 {
-    std::printf("  %-40s %9.1f µs\n", name.c_str(), mean_us);
+    std::printf("  %-40s %9.1f µs\n", size.c_str(), mean_us);
+    std::printf("RESULT %s %s %.3f\n", function.c_str(), size.c_str(), mean_us);
 }
 
 // ── Benchmarks ────────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ static void bench_gaussian_blur(const cle::Device::Pointer& dev)
                 cle::tier1::gaussian_blur_func(dev, src, dst, 2.0f, 2.0f, 0.0f);
                 dev->finish();
             });
-            print_result(label, us);
+            print_result("gaussian_blur", label, us);
         } catch (const std::exception& e) {
             std::printf("  %-40s ERROR: %s\n", label.c_str(), e.what());
         }
@@ -106,7 +107,7 @@ static void bench_add_images_weighted(const cle::Device::Pointer& dev)
                 cle::tier1::add_images_weighted_func(dev, src0, src1, dst, 0.5f, 0.5f);
                 dev->finish();
             });
-            print_result(label, us);
+            print_result("add_images_weighted", label, us);
         } catch (const std::exception& e) {
             std::printf("  %-40s ERROR: %s\n", label.c_str(), e.what());
         }
@@ -125,7 +126,7 @@ static void bench_mean_of_all_pixels(const cle::Device::Pointer& dev)
             auto us = measure_us([&] {
                 cle::tier3::mean_of_all_pixels_func(dev, src);
             });
-            print_result(label, us);
+            print_result("mean_of_all_pixels", label, us);
         } catch (const std::exception& e) {
             std::printf("  %-40s ERROR: %s\n", label.c_str(), e.what());
         }
@@ -145,7 +146,7 @@ static void bench_push_pull(const cle::Device::Pointer& dev)
             auto arr = upload(data, side, side, dev);
             arr->readTo(out.data());
         });
-        print_result(label, us);
+        print_result("push_pull", label, us);
     }
 }
 

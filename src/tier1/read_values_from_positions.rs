@@ -15,26 +15,20 @@ pub fn read_values_from_positions(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let length = list.lock().unwrap().width();
-    let dst = tier0::create_vector_like(src, dst, length, DType::Unknown, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let dst = tier0::create_vector(src, dst, length, DType::Unknown, device)?;
+    let kernel = (
+        "read_values_from_positions",
+        include_str!("../../kernels/read_values_from_positions.cl"),
+    );
     let params = vec![
         ("src0", ParameterValue::Array(src.clone())),
         ("src1", ParameterValue::Array(list.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
-    execute(
-        device,
-        (
-            "read_values_from_positions",
-            include_str!("../../kernels/read_values_from_positions.cl"),
-        ),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

@@ -1,4 +1,4 @@
-use crate::array::{pull, ArrayPtr};
+use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
@@ -30,9 +30,20 @@ pub fn minimum_of_masked_pixels(
     if tmp_src.lock().unwrap().height() > 1 {
         tmp_src = tier1::transpose_yz(device, &tmp_src, None)?;
         tmp_mask = tier1::transpose_yz(device, &tmp_mask, None)?;
-        let width = tmp_src.lock().unwrap().width();
-        let dst_src = tier0::create_vector_like(&tmp_src, None, width, DType::Unknown, device)?;
-        let dst_mask = tier0::create_vector_like(&tmp_mask, None, width, DType::Unknown, device)?;
+        let dst_src = tier0::create_vector(
+            &tmp_src,
+            None,
+            tmp_src.lock().unwrap().width(),
+            DType::Unknown,
+            device,
+        )?;
+        let dst_mask = tier0::create_vector(
+            &tmp_mask,
+            None,
+            tmp_mask.lock().unwrap().width(),
+            DType::Unknown,
+            device,
+        )?;
         tier1::minimum_of_masked_pixels_reduction(
             device,
             &tmp_src,
@@ -46,8 +57,8 @@ pub fn minimum_of_masked_pixels(
 
     tmp_src = tier1::transpose_xz(device, &tmp_src, None)?;
     tmp_mask = tier1::transpose_xz(device, &tmp_mask, None)?;
-    let dst_src = tier0::create_one_like(&tmp_src, None, DType::Float, device)?;
-    let dst_mask = tier0::create_one_like(&tmp_mask, None, DType::Float, device)?;
+    let dst_src = tier0::create_one(&tmp_src, None, DType::Float, device)?;
+    let dst_mask = tier0::create_one(&tmp_mask, None, DType::Float, device)?;
     tier1::minimum_of_masked_pixels_reduction(
         device,
         &tmp_src,
@@ -56,6 +67,7 @@ pub fn minimum_of_masked_pixels(
         Some(dst_mask),
     )?;
 
-    let res: Vec<f32> = pull(&dst_src)?;
+    let mut res = [0.0f32];
+    dst_src.lock().unwrap().read_to(&mut res)?;
     Ok(res[0])
 }

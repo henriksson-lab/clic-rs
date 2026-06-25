@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::f64::consts::PI;
 
 use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
@@ -14,5 +14,5 @@ pub fn degrees_to_radians(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    tier1::multiply_image_and_scalar(device, src, Some(dst), PI / 180.0)
+    tier1::multiply_image_and_scalar(device, src, Some(dst), (PI as f32) / 180.0)
 }

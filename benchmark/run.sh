@@ -13,7 +13,13 @@ BUILD_DIR="${1:-/tmp/clic_build}"
 
 # ── Locate required paths ─────────────────────────────────────────────────────
 
-CLIC_LIB="$BUILD_DIR/clic/libCLIc.dylib"
+if [[ -f "$BUILD_DIR/clic/libCLIc.so" ]]; then
+    CLIC_LIB="$BUILD_DIR/clic/libCLIc.so"
+elif [[ -f "$BUILD_DIR/clic/libCLIc.dylib" ]]; then
+    CLIC_LIB="$BUILD_DIR/clic/libCLIc.dylib"
+else
+    CLIC_LIB="$BUILD_DIR/clic/libCLIc.so"
+fi
 CLIC_INCLUDE="$REPO_ROOT/CLIc/clic/include"
 EIGEN_INCLUDE="$BUILD_DIR/_deps/eigen-src"
 KERNEL_INCLUDE="$BUILD_DIR/_deps/clekernels-src/kernels"   # generated kernel headers
@@ -32,6 +38,12 @@ fi
 
 OUT="$BUILD_DIR/clic_bench"
 echo "=== Building C++ benchmark ==="
+OPENCL_FLAGS=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    OPENCL_FLAGS=(-framework OpenCL)
+else
+    OPENCL_FLAGS=(-lOpenCL)
+fi
 c++ -std=c++17 -O2 \
     -I"$CLIC_INCLUDE" \
     -I"$CLIC_BUILD_INCLUDE" \
@@ -41,7 +53,7 @@ c++ -std=c++17 -O2 \
     "$SCRIPT_DIR/clic_bench.cpp" \
     -L"$BUILD_DIR/clic" -lCLIc \
     -Wl,-rpath,"$BUILD_DIR/clic" \
-    -framework OpenCL \
+    "${OPENCL_FLAGS[@]}" \
     -o "$OUT"
 
 echo ""

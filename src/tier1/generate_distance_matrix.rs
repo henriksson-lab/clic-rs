@@ -15,28 +15,25 @@ pub fn generate_distance_matrix(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let width = coordinate_list1.lock().unwrap().width() + 1;
-    let dst = tier0::create_dst(coordinate_list1, dst, width, width, 1, DType::Float, device)?;
-    dst.lock().unwrap().fill(0.0)?;
-
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let distance_matrix_destination =
+        tier0::create_dst(coordinate_list1, dst, width, width, 1, DType::Float, device)?;
+    distance_matrix_destination.lock().unwrap().fill(0.0)?;
+    let kernel = (
+        "generate_distance_matrix",
+        include_str!("../../kernels/generate_distance_matrix.cl"),
+    );
     let params = vec![
         ("src0", ParameterValue::Array(coordinate_list1.clone())),
         ("src1", ParameterValue::Array(coordinate_list2.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-    ];
-    execute(
-        device,
         (
-            "generate_distance_matrix",
-            include_str!("../../kernels/generate_distance_matrix.cl"),
+            "dst",
+            ParameterValue::Array(distance_matrix_destination.clone()),
         ),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
-    Ok(dst)
+    ];
+    let range = {
+        let l = distance_matrix_destination.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
+    Ok(distance_matrix_destination)
 }

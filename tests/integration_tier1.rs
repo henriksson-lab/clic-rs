@@ -7,16 +7,16 @@
 //! (`CLIc/tests/tier1/`), so results must match within float epsilon.
 
 #[cfg(feature = "gpu-tests")]
+#[path = "parity/tier1.rs"]
+mod parity;
+
+#[cfg(feature = "gpu-tests")]
 mod gpu {
     use approx::assert_abs_diff_eq;
-    use clic_rs::{
-        array::{pull, push},
-        backend_manager::BackendManager,
-        tier1,
-    };
+    use clic_rs::{backend_manager::BackendManager, tier1};
 
     fn device() -> clic_rs::DeviceArc {
-        BackendManager::get()
+        BackendManager::get_instance()
             .get_device("", "all")
             .expect("No OpenCL device found — is OpenCL installed?")
     }
@@ -28,9 +28,24 @@ mod gpu {
     fn copy_preserves_values() {
         let dev = device();
         let input: Vec<f32> = vec![10.0; 10 * 5 * 3];
-        let src = push(&input, 10, 5, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::copy(&dev, &src, None).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 10.0_f32, epsilon = 1e-6);
         }
@@ -49,10 +64,34 @@ mod gpu {
         let input2: Vec<f32> = vec![75.0; n];
         let expected = 25.0_f32 * 0.5 + 75.0 * 0.25;
 
-        let src1 = push(&input1, 10, 5, 3, &dev).unwrap();
-        let src2 = push(&input2, 10, 5, 3, &dev).unwrap();
+        let src1 = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input1,
+            &dev,
+        )
+        .unwrap();
+        let src2 = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input2,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::add_images_weighted(&dev, &src1, &src2, None, 0.5, 0.25).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, expected, epsilon = 1e-4);
         }
@@ -67,9 +106,24 @@ mod gpu {
         let dev = device();
         let n = 10 * 5 * 3;
         let input: Vec<f32> = vec![10.0; n];
-        let src = push(&input, 10, 5, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::add_image_and_scalar(&dev, &src, None, 5.0).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 15.0_f32, epsilon = 1e-6);
         }
@@ -83,9 +137,24 @@ mod gpu {
         let dev = device();
         let n = 10 * 5 * 3;
         let input: Vec<f32> = vec![10.0; n];
-        let src = push(&input, 10, 5, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::subtract_scalar_from_image(&dev, &src, None, 5.0).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 5.0_f32, epsilon = 1e-6);
         }
@@ -97,9 +166,24 @@ mod gpu {
         let dev = device();
         let n = 10 * 5 * 3;
         let input: Vec<f32> = vec![10.0; n];
-        let src = push(&input, 10, 5, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::subtract_image_from_scalar(&dev, &src, None, 5.0).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, -5.0_f32, epsilon = 1e-6);
         }
@@ -114,9 +198,24 @@ mod gpu {
         let dev = device();
         let n = 10 * 5 * 3;
         let input: Vec<f32> = vec![10.0; n];
-        let src = push(&input, 10, 5, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::multiply_image_and_scalar(&dev, &src, None, 5.0).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 50.0_f32, epsilon = 1e-6);
         }
@@ -130,9 +229,24 @@ mod gpu {
         let dev = device();
         let n = 10 * 5 * 3;
         let input: Vec<f32> = vec![-5.0; n];
-        let src = push(&input, 10, 5, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            3,
+            clic_rs::utils::shape_to_dimension(10, 5, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::absolute(&dev, &src, None).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 5.0_f32, epsilon = 1e-6);
         }
@@ -155,7 +269,12 @@ mod gpu {
             .unwrap();
 
         let out = tier1::gaussian_blur(&dev, &src, None, 1.0, 1.0, 0.0).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
 
         // Expected values from CLIc test (row-major, 5 rows × 5 cols)
         let valid: Vec<f32> = vec![
@@ -206,9 +325,24 @@ mod gpu {
                 input[z * 9 + i] = (z + 1) as f32;
             }
         }
-        let src = push(&input, 3, 3, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            3,
+            3,
+            3,
+            clic_rs::utils::shape_to_dimension(3, 3, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::maximum_z_projection(&dev, &src, None).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         assert_eq!(result.len(), 9); // 3×3×1
         for v in &result {
             assert_abs_diff_eq!(*v, 3.0_f32, epsilon = 1e-6);
@@ -226,9 +360,24 @@ mod gpu {
                 input[z * 9 + i] = (z + 1) as f32;
             }
         }
-        let src = push(&input, 3, 3, 3, &dev).unwrap();
+        let src = clic_rs::array::Array::create_with_data(
+            3,
+            3,
+            3,
+            clic_rs::utils::shape_to_dimension(3, 3, 3),
+            clic_rs::types::MType::Buffer,
+            &input,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::minimum_z_projection(&dev, &src, None).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         assert_eq!(result.len(), 9);
         for v in &result {
             assert_abs_diff_eq!(*v, 1.0_f32, epsilon = 1e-6);
@@ -243,10 +392,34 @@ mod gpu {
         let n = 10 * 5;
         let a: Vec<f32> = vec![25.0; n];
         let b: Vec<f32> = vec![75.0; n];
-        let src_a = push(&a, 10, 5, 1, &dev).unwrap();
-        let src_b = push(&b, 10, 5, 1, &dev).unwrap();
+        let src_a = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            1,
+            clic_rs::utils::shape_to_dimension(10, 5, 1),
+            clic_rs::types::MType::Buffer,
+            &a,
+            &dev,
+        )
+        .unwrap();
+        let src_b = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            1,
+            clic_rs::utils::shape_to_dimension(10, 5, 1),
+            clic_rs::types::MType::Buffer,
+            &b,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::maximum_images(&dev, &src_a, &src_b, None).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 75.0_f32, epsilon = 1e-6);
         }
@@ -258,10 +431,34 @@ mod gpu {
         let n = 10 * 5;
         let a: Vec<f32> = vec![25.0; n];
         let b: Vec<f32> = vec![75.0; n];
-        let src_a = push(&a, 10, 5, 1, &dev).unwrap();
-        let src_b = push(&b, 10, 5, 1, &dev).unwrap();
+        let src_a = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            1,
+            clic_rs::utils::shape_to_dimension(10, 5, 1),
+            clic_rs::types::MType::Buffer,
+            &a,
+            &dev,
+        )
+        .unwrap();
+        let src_b = clic_rs::array::Array::create_with_data(
+            10,
+            5,
+            1,
+            clic_rs::utils::shape_to_dimension(10, 5, 1),
+            clic_rs::types::MType::Buffer,
+            &b,
+            &dev,
+        )
+        .unwrap();
         let out = tier1::minimum_images(&dev, &src_a, &src_b, None).unwrap();
-        let result: Vec<f32> = pull(&out).unwrap();
+        let result: Vec<f32> = {
+            let lock = out.lock().unwrap();
+            let mut data = vec![<f32>::default(); lock.size()];
+            lock.read_to(&mut data).unwrap();
+            data
+        };
+
         for v in &result {
             assert_abs_diff_eq!(*v, 25.0_f32, epsilon = 1e-6);
         }

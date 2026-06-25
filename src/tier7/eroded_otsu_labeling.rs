@@ -2,7 +2,7 @@ use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
-use crate::types::LABEL;
+use crate::types::{DType, LABEL};
 use crate::{tier1, tier4, tier6};
 
 /// Segment and label an image using blurring, Otsu thresholding, binary erosion,
@@ -38,10 +38,11 @@ pub fn eroded_otsu_labeling(
     )?;
     let binary = tier4::threshold_otsu(device, &blurred, None)?;
 
-    let mut eroded1 = tier1::copy(device, &binary, None)?;
-    let mut eroded2 = tier0::create_like_same(&binary, None, device)?;
+    let mut eroded1 = tier0::create_like(&binary, None, DType::Unknown, device)?;
+    let mut eroded2 = tier0::create_like(&binary, None, DType::Unknown, device)?;
+    binary.lock().unwrap().copy_to(&eroded1)?;
 
-    for _ in 0..number_of_erosions.max(0) {
+    for _i in 0..number_of_erosions {
         tier1::binary_erode(
             device,
             &eroded1,

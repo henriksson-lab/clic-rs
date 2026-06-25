@@ -10,21 +10,15 @@ use crate::types::DType;
 /// Mirrors CLIc's `sobel_func`.
 pub fn sobel(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let kernel = ("sobel", include_str!("../../kernels/sobel.cl"));
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
-    execute(
-        device,
-        ("sobel", include_str!("../../kernels/sobel.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

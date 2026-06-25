@@ -4,41 +4,41 @@ use crate::error::{CleError, Result};
 use crate::tier3;
 use crate::types::{DType, MType};
 
-/// Determines the centroids of all labels in a label image or image stack.
-///
-/// Writes the resulting coordinates into a point list image of dimensions
-/// `n x 3 x 1`, where `n` is the number of labels and the rows are x, y, and z.
 pub fn centroids_of_labels(
     device: &DeviceArc,
     label_image: &ArrayPtr,
     centroids_coordinates: Option<ArrayPtr>,
     include_background: bool,
 ) -> Result<ArrayPtr> {
-    let props = if include_background {
-        tier3::statistics_of_background_and_labelled_pixels(
+    let props;
+    if include_background {
+        props = tier3::statistics_of_background_and_labelled_pixels(
             device,
             Some(label_image),
             Some(label_image),
-        )?
+        )?;
     } else {
-        tier3::statistics_of_labelled_pixels(device, Some(label_image), Some(label_image))?
-    };
+        props = tier3::statistics_of_labelled_pixels(device, Some(label_image), Some(label_image))?;
+    }
 
-    let centroid_x = props
-        .get("centroid_x")
-        .ok_or_else(|| CleError::Other("centroids_of_labels: Missing centroid_x.".to_string()))?;
-    let centroid_y = props
-        .get("centroid_y")
-        .ok_or_else(|| CleError::Other("centroids_of_labels: Missing centroid_y.".to_string()))?;
-    let centroid_z = props
-        .get("centroid_z")
-        .ok_or_else(|| CleError::Other("centroids_of_labels: Missing centroid_z.".to_string()))?;
+    let centroid_x = props["centroid_x"].clone();
+    let centroid_y = props["centroid_y"].clone();
+    let centroid_z = props["centroid_z"].clone();
     let nb_labels = centroid_x.len();
 
-    let centroids_coordinates = match centroids_coordinates {
-        Some(dst) => dst,
-        None => Array::create(nb_labels, 3, 1, 1, DType::Float, MType::Buffer, device)?,
-    };
+    let mut centroids_coordinates = centroids_coordinates;
+    if centroids_coordinates.is_none() {
+        centroids_coordinates = Some(Array::create(
+            nb_labels,
+            3,
+            1,
+            1,
+            DType::Float,
+            MType::Buffer,
+            device,
+        )?);
+    }
+    let centroids_coordinates = centroids_coordinates.unwrap();
 
     {
         let dst = centroids_coordinates.lock().unwrap();
@@ -58,14 +58,12 @@ pub fn centroids_of_labels(
         }
     }
 
-    let mut coordinates = Vec::with_capacity(nb_labels * 3);
-    coordinates.extend_from_slice(centroid_x);
-    coordinates.extend_from_slice(centroid_y);
-    coordinates.extend_from_slice(centroid_z);
-    centroids_coordinates
-        .lock()
-        .unwrap()
-        .write_from_typed(&coordinates)?;
+    {
+        let centroids_coordinates = centroids_coordinates.lock().unwrap();
+        centroids_coordinates.write_from_region(&centroid_x, [nb_labels, 1, 1], [0, 0, 0])?;
+        centroids_coordinates.write_from_region(&centroid_y, [nb_labels, 1, 1], [0, 1, 0])?;
+        centroids_coordinates.write_from_region(&centroid_z, [nb_labels, 1, 1], [0, 2, 0])?;
+    }
 
     Ok(centroids_coordinates)
 }

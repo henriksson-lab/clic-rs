@@ -1,4 +1,4 @@
-use crate::array::{pull, Array, ArrayPtr};
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
@@ -31,26 +31,32 @@ pub fn masked_voronoi_labeling(
     flag.lock().unwrap().fill(1.0)?;
 
     let mut flag_value = 1_i32;
-    let mut iteration_count = 0;
+    let mut iter_count = 0;
     while flag_value > 0 {
-        if iteration_count % 2 == 0 {
-            tier1::onlyzero_overwrite_maximum(device, &flip, &flag, Some(flop.clone()), "box")?;
-        } else {
-            tier1::onlyzero_overwrite_maximum(device, &flop, &flag, Some(flip.clone()), "sphere")?;
-        }
+        let active = if iter_count % 2 == 0 { &flip } else { &flop };
+        let passive = if iter_count % 2 == 0 { &flop } else { &flip };
+        let connectivity = if iter_count % 2 == 0 { "box" } else { "sphere" };
+        tier1::onlyzero_overwrite_maximum(
+            device,
+            active,
+            &flag,
+            Some(passive.clone()),
+            connectivity,
+        )?;
 
-        let flag_host: Vec<i32> = pull(&flag)?;
-        flag_value = flag_host[0];
+        flag.lock()
+            .unwrap()
+            .read_to(std::slice::from_mut(&mut flag_value))?;
         if flag_value > 0 {
             flag.lock().unwrap().fill(0.0)?;
         }
-        iteration_count += 1;
+        iter_count += 1;
     }
 
-    let labeled = if iteration_count % 2 == 0 {
-        &flip
-    } else {
-        &flop
-    };
-    tier1::mask(device, labeled, mask, Some(dst))
+    tier1::mask(
+        device,
+        if iter_count % 2 == 0 { &flip } else { &flop },
+        mask,
+        Some(dst),
+    )
 }

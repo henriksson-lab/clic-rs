@@ -23,10 +23,10 @@ pub fn voronoi_otsu_labeling(
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, LABEL, device)?;
 
-    let spot_blurred = tier1::gaussian_blur(device, src, None, spot_sigma, spot_sigma, spot_sigma)?;
-    let spot = tier2::detect_maxima(device, &spot_blurred, None, 0.0, 0.0, 0.0, "box")?;
+    let mut temp = tier1::gaussian_blur(device, src, None, spot_sigma, spot_sigma, spot_sigma)?;
+    let spot = tier2::detect_maxima(device, &temp, None, 0.0, 0.0, 0.0, "box")?;
 
-    let outline_blurred = tier1::gaussian_blur(
+    temp = tier1::gaussian_blur(
         device,
         src,
         None,
@@ -34,9 +34,9 @@ pub fn voronoi_otsu_labeling(
         outline_sigma,
         outline_sigma,
     )?;
-    let segmentation = tier4::threshold_otsu(device, &outline_blurred, None)?;
+    let segmentation = tier4::threshold_otsu(device, &temp, None)?;
 
     let binary = tier1::binary_and(device, &spot, &segmentation, None)?;
-    let labeled = tier6::masked_voronoi_labeling(device, &binary, &segmentation, None)?;
-    tier1::mask(device, &labeled, &segmentation, Some(dst))
+    temp = tier6::masked_voronoi_labeling(device, &binary, &segmentation, None)?;
+    tier1::mask(device, &temp, &segmentation, Some(dst))
 }

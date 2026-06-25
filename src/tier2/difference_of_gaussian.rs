@@ -16,7 +16,7 @@ pub fn difference_of_gaussian(
     let [sigma1_x, sigma1_y, sigma1_z] = sigma1;
     let [sigma2_x, sigma2_y, sigma2_z] = sigma2;
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    let g1 = tier1::gaussian_blur(device, src, None, sigma1_x, sigma1_y, sigma1_z)?;
-    let g2 = tier1::gaussian_blur(device, src, None, sigma2_x, sigma2_y, sigma2_z)?;
-    tier1::add_images_weighted(device, &g1, &g2, Some(dst), 1.0, -1.0)
+    let gauss1 = tier1::gaussian_blur(device, src, None, sigma1_x, sigma1_y, sigma1_z)?;
+    let gauss2 = tier1::gaussian_blur(device, src, None, sigma2_x, sigma2_y, sigma2_z)?;
+    tier1::add_images_weighted(device, &gauss1, &gauss2, Some(dst), 1.0, -1.0)
 }

@@ -3,6 +3,7 @@ use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::execution::{execute, ParameterValue};
 use crate::tier0;
+use crate::types::DType;
 
 /// Replace NaN and positive/negative infinity values with finite values.
 ///
@@ -15,11 +16,8 @@ pub fn nan_to_num(
     posinf: f32,
     neginf: f32,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
+    let kernel = ("nan_to_num", include_str!("../../kernels/nan_to_num.cl"));
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
@@ -27,13 +25,10 @@ pub fn nan_to_num(
         ("pinf", ParameterValue::Float(posinf)),
         ("ninf", ParameterValue::Float(neginf)),
     ];
-    execute(
-        device,
-        ("nan_to_num", include_str!("../../kernels/nan_to_num.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

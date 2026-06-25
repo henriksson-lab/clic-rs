@@ -43,20 +43,8 @@ pub fn next_smooth(x: usize) -> usize {
     let delta = 0.000001_f64;
     let mut a = vec![0.0_f64; z];
 
-    for &p in &[2_i32, 3, 5, 7] {
-        let log_p = (p as f64).ln();
-        let mut power = p as usize;
-        while power <= x + z {
-            let mut j = x % power;
-            if j > 0 {
-                j = power - j;
-            }
-            while j < z {
-                a[j] += log_p;
-                j += power;
-            }
-            power *= p as usize;
-        }
+    for p in [2_usize, 3, 5, 7] {
+        handle_prime(x, z, &mut a, p);
     }
 
     let log_x = (x as f64).ln();
@@ -66,6 +54,25 @@ pub fn next_smooth(x: usize) -> usize {
         }
     }
     usize::MAX
+}
+
+fn handle_prime(x: usize, z: usize, a: &mut [f64], p: usize) {
+    let log_p = (p as f64).ln();
+    let mut power = p;
+
+    while power <= x + z {
+        let mut j = x % power;
+        if j > 0 {
+            j = power - j;
+        }
+
+        while j < z {
+            a[j] += log_p;
+            j += power;
+        }
+
+        power *= p;
+    }
 }
 
 /// Compute an FFT-friendly shape (each dim rounded up to next smooth number).
@@ -180,11 +187,21 @@ mod tests {
 
     #[test]
     fn test_next_smooth() {
-        // 8 = 2^3 is already smooth
-        let s = next_smooth(8);
-        assert!(s >= 8);
-        // 9 = 3^2
-        assert!(next_smooth(9) >= 9);
+        assert_eq!(next_smooth(8), 8);
+        assert_eq!(next_smooth(9), 9);
+        assert_eq!(next_smooth(11), 12);
+        assert_eq!(next_smooth(127), 128);
+    }
+
+    #[test]
+    fn handle_prime_marks_offsets_for_prime_powers() {
+        let mut a = vec![0.0; 6];
+        handle_prime(10, 6, &mut a, 2);
+
+        let log_2 = 2.0_f64.ln();
+        assert_eq!(a[0], log_2);
+        assert_eq!(a[2], log_2 * 2.0);
+        assert_eq!(a[4], log_2);
     }
 
     #[test]

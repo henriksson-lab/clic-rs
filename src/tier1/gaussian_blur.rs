@@ -1,4 +1,4 @@
-use crate::array::ArrayPtr;
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::execution::execute_separable;
@@ -18,25 +18,27 @@ pub fn gaussian_blur(
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
 
-    let src_float = if src.lock().unwrap().dtype() != DType::Float {
-        let t = tier0::create_like(src, None, DType::Float, device)?;
-        copy(device, src, Some(t.clone()))?
-    } else {
-        src.clone()
-    };
+    let mut temp = src.clone();
+    if temp.lock().unwrap().dtype() != DType::Float {
+        temp = Array::create_from_array(&dst)?;
+        copy(device, src, Some(temp.clone()))?;
+    }
 
-    let sigma = [sigma_x, sigma_y, sigma_z];
-    let radius = sigma.map(crate::utils::sigma2kernelsize);
+    let kernel = (
+        "gaussian_blur_separable",
+        include_str!("../../kernels/gaussian_blur_separable.cl"),
+    );
     execute_separable(
         device,
-        (
-            "gaussian_blur_separable",
-            include_str!("../../kernels/gaussian_blur_separable.cl"),
-        ),
-        &src_float,
+        kernel,
+        &temp,
         &dst,
-        sigma,
-        radius,
+        [sigma_x, sigma_y, sigma_z],
+        [
+            crate::utils::sigma2kernelsize(sigma_x),
+            crate::utils::sigma2kernelsize(sigma_y),
+            crate::utils::sigma2kernelsize(sigma_z),
+        ],
         [0, 0, 0],
     )?;
     Ok(dst)
@@ -56,29 +58,25 @@ pub fn gaussian_derivative(
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
 
-    let src_float = if src.lock().unwrap().dtype() != DType::Float {
-        let t = tier0::create_like(src, None, DType::Float, device)?;
-        copy(device, src, Some(t.clone()))?
-    } else {
-        src.clone()
-    };
+    let mut temp = src.clone();
+    if temp.lock().unwrap().dtype() != DType::Float {
+        temp = Array::create_from_array(&dst)?;
+        copy(device, src, Some(temp.clone()))?;
+    }
 
     const TRUNCATE: f32 = 8.0;
-    let sigma = [sigma_x.max(0.0), sigma_y.max(0.0), sigma_z.max(0.0)];
-    let radius = sigma.map(|s| (TRUNCATE * s + 0.5) as i32);
+    let sigmas = [sigma_x.max(0.0), sigma_y.max(0.0), sigma_z.max(0.0)];
+    let radii = [
+        (TRUNCATE * sigmas[0] + 0.5) as i32,
+        (TRUNCATE * sigmas[1] + 0.5) as i32,
+        (TRUNCATE * sigmas[2] + 0.5) as i32,
+    ];
     let orders = [order_x.min(2), order_y.min(2), order_z.min(2)];
 
-    execute_separable(
-        device,
-        (
-            "gaussian_derivative_separable",
-            include_str!("../../kernels/gaussian_derivative_separable.cl"),
-        ),
-        &src_float,
-        &dst,
-        sigma,
-        radius,
-        orders,
-    )?;
+    let kernel = (
+        "gaussian_derivative_separable",
+        include_str!("../../kernels/gaussian_derivative_separable.cl"),
+    );
+    execute_separable(device, kernel, &temp, &dst, sigmas, radii, orders)?;
     Ok(dst)
 }

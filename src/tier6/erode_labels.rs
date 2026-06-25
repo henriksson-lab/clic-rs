@@ -25,6 +25,7 @@ pub fn erode_labels(
     let mut temp = tier1::detect_label_edges(device, src, None)?;
     let temp1 = tier1::binary_not(device, &temp, None)?;
     temp = tier1::mask(device, src, &temp1, Some(temp))?;
+    drop(temp1);
 
     if radius == 1 {
         tier1::copy(device, &temp, Some(dst.clone()))?;
@@ -53,11 +54,12 @@ pub fn erode_labels(
             tier1::copy(device, &temp, Some(dst.clone()))?;
         }
         temp = tier1::not_equal_constant(device, &dst, Some(temp), 0.0)?;
-        tier5::connected_component_labeling(device, &temp, Some(dst), "sphere")
+        tier5::connected_component_labeling(device, &temp, Some(dst.clone()), "sphere")?;
     } else {
         if radius % 2 == 0 {
             tier1::copy(device, &dst, Some(temp.clone()))?;
         }
-        tier4::relabel_sequential(device, &temp, Some(dst), 4096)
+        tier4::relabel_sequential(device, &temp, Some(dst.clone()), 4096)?;
     }
+    Ok(dst)
 }

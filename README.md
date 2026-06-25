@@ -6,6 +6,7 @@ OpenCL is used via the [`opencl3`](https://crates.io/crates/opencl3) crate.
 
 **more testing pending**
 
+* 2026-06-24: Audit has gone some way. Real data parity testing needed. Benchmarks need updating
 * 2026-06-21: Audit ongoing
 
 
@@ -45,12 +46,22 @@ But:
 ## Usage
 
 ```rust
-use clic_rs::{BackendManager, array::{push, pull}, tier1};
+use clic_rs::{array::Array, types::MType, BackendManager, tier1};
 
-let device = BackendManager::get().get_device("", "gpu").unwrap();
-let src = push(&vec![1.0f32; 100], 10, 10, 1, &device).unwrap();
+let device = BackendManager::get_instance().get_device("", "gpu").unwrap();
+let src = Array::create_with_data(
+    10,
+    10,
+    1,
+    clic_rs::utils::shape_to_dimension(10, 10, 1),
+    MType::Buffer,
+    &vec![1.0f32; 100],
+    &device,
+)
+.unwrap();
 let dst = tier1::gaussian_blur(&device, &src, None, 1.0, 1.0, 0.0).unwrap();
-let result: Vec<f32> = pull(&dst).unwrap();
+let mut result = vec![0.0_f32; dst.lock().unwrap().size()];
+dst.lock().unwrap().read_to(&mut result).unwrap();
 ```
 
 ## Benchmarks
@@ -72,8 +83,9 @@ Measured on Apple Silicon (Intel GPU, macOS 15.7, OpenCL). Both implementations 
 Run benchmarks:
 
 ```bash
-bash benchmark/run.sh          # compare C++ CLIc vs clic-rs side by side
-cargo bench --bench gpu        # Rust only (Criterion HTML report)
+bash benchmark/run.sh                       # compare C++ CLIc vs clic-rs side by side
+bash benchmark/update_function_table.sh     # regenerate speed/RSS table
+cargo bench --bench gpu                     # Rust only (Criterion HTML report)
 ```
 
 ## Building
@@ -91,3 +103,14 @@ The execution model mirrors CLIc: `generate_defines()` builds a `#define` preamb
 ## License
 
 BSD 3-Clause License. See [LICENSE](LICENSE) for details.
+
+
+## Citing and acknowledgements
+
+**CLIc in turn is built in top of CLIJ, which asks for the following citation:**
+
+Robert Haase, Loic Alain Royer, Peter Steinbach, Deborah Schmidt, Alexandr Dibrov, Uwe Schmidt, Martin Weigert, Nicola Maghelli, Pavel Tomancak, Florian Jug, Eugene W Myers. CLIJ: GPU-accelerated image processing for everyone. Nat Methods 17, 5-6 (2020) doi:10.1038/s41592-019-0650-1
+
+**CLIc has the following acknowledgement:**
+
+We acknowledge support by the Deutsche Forschungsgemeinschaft under Germany’s Excellence Strategy (EXC2068) Cluster of Excellence Physics of Life of TU Dresden and by the Institut Pasteur, Paris. This project has been made possible in part by grant number 2021-237734 ([GPU-accelerating Fiji and friends using distributed CLIJ, NEUBIAS-style, EOSS4](https://chanzuckerberg.com/eoss/proposals/gpu-accelerating-fiji-and-friends-using-distributed-clij-neubias-style/)) from the Chan Zuckerberg Initiative DAF, an advised fund of the Silicon Valley Community Foundation, and by support from the French National Research Agency via the [France BioImaging research infrastructure](https://france-bioimaging.org/) (ANR-24-INBS-0005 FBI BIOGEN).

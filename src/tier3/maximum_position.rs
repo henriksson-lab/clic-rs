@@ -1,48 +1,59 @@
-use crate::array::{pull, ArrayPtr};
+use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier1;
-
-fn read_index(arr: &ArrayPtr, x: usize, y: usize) -> Result<usize> {
-    let width = arr.lock().unwrap().width();
-    let values: Vec<u32> = pull(arr)?;
-    Ok(values[y * width + x] as usize)
-}
 
 /// Return the position of the first maximum value as `[x, y, z]`.
 ///
 /// Mirrors CLIc's `maximum_position_func`.
 pub fn maximum_position(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<f32>> {
-    let (height, depth) = {
-        let l = src.lock().unwrap();
-        (l.height(), l.depth())
-    };
-
-    let mut y_coord = 0usize;
     let mut z_coord = 0usize;
+    let mut y_coord = 0usize;
+    let x_coord: usize;
+    let mut coord = vec![0.0f32; 3];
+
     let mut temp = src.clone();
     let mut pos_z = None;
     let mut pos_y = None;
 
-    if depth > 1 {
+    if src.lock().unwrap().depth() > 1 {
         let positions = tier1::z_position_of_maximum_z_projection(device, &temp, None)?;
         temp = tier1::maximum_z_projection(device, &temp, None)?;
         pos_z = Some(positions);
     }
-    if height > 1 {
+    if src.lock().unwrap().height() > 1 {
         let positions = tier1::y_position_of_maximum_y_projection(device, &temp, None)?;
         temp = tier1::maximum_y_projection(device, &temp, None)?;
         pos_y = Some(positions);
     }
 
     let pos_x = tier1::x_position_of_maximum_x_projection(device, &temp, None)?;
-    let x_coord = read_index(&pos_x, 0, 0)?;
+    temp = tier1::maximum_x_projection(device, &temp, None)?;
+
+    let mut value = [0u32; 1];
+    pos_x.lock().unwrap().read_to_at(&mut value, 0, 0, 0)?;
+    x_coord = value[0] as usize;
+    coord[0] = x_coord as f32;
+
     if let Some(pos_y) = pos_y {
-        y_coord = read_index(&pos_y, x_coord, 0)?;
+        pos_y
+            .lock()
+            .unwrap()
+            .read_to_at(&mut value, x_coord, 0, 0)?;
+        y_coord = value[0] as usize;
+        coord[1] = y_coord as f32;
     }
     if let Some(pos_z) = pos_z {
-        z_coord = read_index(&pos_z, x_coord, y_coord)?;
+        pos_z
+            .lock()
+            .unwrap()
+            .read_to_at(&mut value, x_coord, y_coord, 0)?;
+        z_coord = value[0] as usize;
+        coord[2] = z_coord as f32;
     }
 
-    Ok(vec![x_coord as f32, y_coord as f32, z_coord as f32])
+    coord[2] = z_coord as f32;
+    let _ = temp;
+
+    Ok(coord)
 }

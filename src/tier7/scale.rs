@@ -1,25 +1,35 @@
-use super::affine_transform::affine_transform;
 use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
+use crate::transform::{apply_affine_transform, AffineTransform};
 
-/// Scale the image by `(scale_x, scale_y, scale_z)` around the origin.
-///
-/// A factor greater than 1 stretches; a factor less than 1 shrinks.
+/// Scales the image by given factors.
 pub fn scale(
-    device: &DeviceArc,
+    _device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    scale_x: f32,
-    scale_y: f32,
-    scale_z: f32,
+    factor_x: f32,
+    factor_y: f32,
+    factor_z: f32,
+    centered: bool,
+    interpolate: bool,
+    resize: bool,
 ) -> Result<ArrayPtr> {
-    #[rustfmt::skip]
-    let inv: [f32; 16] = [
-        1.0 / scale_x, 0.0,           0.0,           0.0,
-        0.0,           1.0 / scale_y, 0.0,           0.0,
-        0.0,           0.0,           1.0 / scale_z, 0.0,
-        0.0,           0.0,           0.0,            1.0,
-    ];
-    affine_transform(device, src, dst, &inv)
+    let mut transform = AffineTransform::new();
+    if centered && !resize {
+        let shape = {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        };
+        transform.center(shape, false);
+    }
+    transform.scale(factor_x, factor_y, factor_z);
+    if centered && !resize {
+        let shape = {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        };
+        transform.center(shape, true);
+    }
+    apply_affine_transform(src, dst, &transform, interpolate, resize)
 }

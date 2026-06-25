@@ -3,6 +3,7 @@ use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::execution::{execute, ParameterValue};
 use crate::tier0;
+use crate::types::DType;
 
 /// Apply a circular shift (roll) to `src`, wrapping border pixels per dimension.
 pub fn circular_shift(
@@ -13,10 +14,10 @@ pub fn circular_shift(
     shift_y: i32,
     shift_z: i32,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
+    let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
+    let range = {
+        let src = src.lock().unwrap();
+        [src.width(), src.height(), src.depth()]
     };
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
@@ -32,7 +33,7 @@ pub fn circular_shift(
             include_str!("../../kernels/circular_shift.cl"),
         ),
         &params,
-        global,
+        range,
         [0, 0, 0],
         &[],
     )?;

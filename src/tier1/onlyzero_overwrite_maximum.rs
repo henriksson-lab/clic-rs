@@ -3,6 +3,7 @@ use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::execution::{execute, ParameterValue};
 use crate::tier0;
+use crate::types::DType;
 
 /// Replace zero-valued pixels with the maximum neighboring value.
 ///
@@ -16,28 +17,27 @@ pub fn onlyzero_overwrite_maximum(
     dst: Option<ArrayPtr>,
     connectivity: &str,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
+    let mut kernel = (
+        "onlyzero_overwrite_maximum_box",
+        include_str!("../../kernels/onlyzero_overwrite_maximum_box.cl"),
+    );
+    if connectivity == "sphere" {
+        kernel = (
+            "onlyzero_overwrite_maximum_diamond",
+            include_str!("../../kernels/onlyzero_overwrite_maximum_diamond.cl"),
+        );
+    }
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst0", ParameterValue::Array(flag.clone())),
         ("dst1", ParameterValue::Array(dst.clone())),
     ];
-    let kernel = if connectivity == "sphere" {
-        (
-            "onlyzero_overwrite_maximum_diamond",
-            include_str!("../../kernels/onlyzero_overwrite_maximum_diamond.cl"),
-        )
-    } else {
-        (
-            "onlyzero_overwrite_maximum_box",
-            include_str!("../../kernels/onlyzero_overwrite_maximum_box.cl"),
-        )
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
     };
-    execute(device, kernel, &params, global, [0, 0, 0], &[])?;
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }
 

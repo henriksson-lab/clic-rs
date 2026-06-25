@@ -15,25 +15,19 @@ pub fn multiply_image_and_position(
     dimension: i32,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let kernel = (
+        "multiply_image_and_position",
+        include_str!("../../kernels/multiply_image_and_position.cl"),
+    );
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
         ("index", ParameterValue::Int(dimension)),
     ];
-    execute(
-        device,
-        (
-            "multiply_image_and_position",
-            include_str!("../../kernels/multiply_image_and_position.cl"),
-        ),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

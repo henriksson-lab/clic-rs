@@ -3,6 +3,7 @@ use crate::device::DeviceArc;
 use crate::error::{CleError, Result};
 use crate::execution::{execute, ParameterValue};
 use crate::tier0;
+use crate::types::DType;
 use crate::utils::radius2kernelsize;
 
 /// Morphological erosion with an arbitrary binary footprint.
@@ -12,7 +13,7 @@ pub fn erosion(
     footprint: &ArrayPtr,
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
+    let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
     let src_dim = src.lock().unwrap().dimension();
     let footprint_dim = footprint.lock().unwrap().dimension();
     if src_dim != footprint_dim {
@@ -20,23 +21,17 @@ pub fn erosion(
             "Error: input and structuring element in erosion operator must have the same dimensionality.".into(),
         ));
     }
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let kernel = ("erosion", include_str!("../../kernels/erosion.cl"));
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("footprint", ParameterValue::Array(footprint.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
-    execute(
-        device,
-        ("erosion", include_str!("../../kernels/erosion.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }
 
@@ -50,27 +45,29 @@ pub fn binary_erode(
     radius_z: f32,
     connectivity: &str,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
+    let r_x = radius2kernelsize(radius_x);
+    let r_y = radius2kernelsize(radius_y);
+    let r_z = radius2kernelsize(radius_z);
+    let mut kernel = ("erode_box", include_str!("../../kernels/erode_box.cl"));
+    if connectivity == "sphere" {
+        kernel = (
+            "erode_sphere",
+            include_str!("../../kernels/erode_sphere.cl"),
+        );
+    }
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("scalar0", ParameterValue::Int(radius2kernelsize(radius_x))),
-        ("scalar1", ParameterValue::Int(radius2kernelsize(radius_y))),
-        ("scalar2", ParameterValue::Int(radius2kernelsize(radius_z))),
+        ("scalar0", ParameterValue::Int(r_x)),
+        ("scalar1", ParameterValue::Int(r_y)),
+        ("scalar2", ParameterValue::Int(r_z)),
     ];
-    let kernel = if connectivity == "sphere" {
-        (
-            "erode_sphere",
-            include_str!("../../kernels/erode_sphere.cl"),
-        )
-    } else {
-        ("erode_box", include_str!("../../kernels/erode_box.cl"))
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
     };
-    execute(device, kernel, &params, global, [0, 0, 0], &[])?;
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }
 
@@ -87,12 +84,12 @@ pub fn grayscale_erode(
     crate::tier1::minimum_filter(device, src, dst, radius_x, radius_y, radius_z, connectivity)
 }
 
-/// Morphological box erosion.
-pub fn erode_box(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
-    binary_erode(device, src, dst, 1.0, 1.0, 1.0, "box")
-}
-
 /// Morphological sphere (cross) erosion.
 pub fn erode_sphere(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
     binary_erode(device, src, dst, 1.0, 1.0, 1.0, "sphere")
+}
+
+/// Morphological box erosion.
+pub fn erode_box(device: &DeviceArc, src: &ArrayPtr, dst: Option<ArrayPtr>) -> Result<ArrayPtr> {
+    binary_erode(device, src, dst, 1.0, 1.0, 1.0, "box")
 }

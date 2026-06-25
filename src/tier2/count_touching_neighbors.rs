@@ -14,14 +14,10 @@ pub fn count_touching_neighbors(
     touching_neighbors_count_destination: Option<ArrayPtr>,
     ignore_background: bool,
 ) -> Result<ArrayPtr> {
-    let width = {
-        let lock = touch_matrix.lock().unwrap();
-        lock.width()
-    };
-    let dst = tier0::create_vector_like(
+    let touching_neighbors_count_destination = tier0::create_vector(
         touch_matrix,
         touching_neighbors_count_destination,
-        width,
+        touch_matrix.lock().unwrap().width(),
         DType::Uint32,
         device,
     )?;
@@ -33,5 +29,9 @@ pub fn count_touching_neighbors(
         tier1::set_where_x_equals_y(device, &bin_matrix, 0.0)?;
     }
 
-    tier1::sum_y_projection(device, &bin_matrix, Some(dst))
+    tier1::sum_y_projection(
+        device,
+        &bin_matrix,
+        Some(touching_neighbors_count_destination),
+    )
 }

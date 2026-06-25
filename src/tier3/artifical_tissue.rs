@@ -4,37 +4,8 @@ use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier2;
-use crate::types::{MType, LABEL};
+use crate::types::{DType, MType, LABEL};
 use crate::utils::shape_to_dimension;
-
-struct SimpleRng {
-    state: u64,
-}
-
-impl SimpleRng {
-    fn new() -> Self {
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0x9e37_79b9_7f4a_7c15);
-        Self { state: seed }
-    }
-
-    fn next_f32(&mut self) -> f32 {
-        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        let value = (self.state >> 40) as u32;
-        (value as f32 + 1.0) / ((1_u32 << 24) as f32 + 1.0)
-    }
-
-    fn normal(&mut self, sigma: f32) -> f32 {
-        if sigma == 0.0 {
-            return 0.0;
-        }
-        let u1 = self.next_f32().max(f32::MIN_POSITIVE);
-        let u2 = self.next_f32();
-        sigma * (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 fn coordinate_generator(
@@ -48,31 +19,64 @@ fn coordinate_generator(
     sigma_y: f32,
     sigma_z: f32,
 ) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
-    let mut rng = SimpleRng::new();
-    let mut all_x = Vec::new();
-    let mut all_y = Vec::new();
-    let mut all_z = Vec::new();
+    let mut all_x_coords = Vec::new();
+    let mut all_y_coords = Vec::new();
+    let mut all_z_coords = Vec::new();
+
+    let mut rng_state = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9e37_79b9_7f4a_7c15);
+    let mut normal = |sigma: f32| -> f32 {
+        if sigma == 0.0 {
+            return 0.0;
+        }
+        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let u1_value = (rng_state >> 40) as u32;
+        let u1 = ((u1_value as f32 + 1.0) / ((1_u32 << 24) as f32 + 1.0)).max(f32::MIN_POSITIVE);
+        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let u2_value = (rng_state >> 40) as u32;
+        let u2 = (u2_value as f32 + 1.0) / ((1_u32 << 24) as f32 + 1.0);
+        sigma * (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+    };
 
     let mut z = 0.0;
+    let mut _k = 0;
     while z < depth as f32 {
-        let mut row = 0;
+        let mut i = 0;
         let mut y = 0.0;
         while y < height as f32 {
-            let offset_x = if row % 2 != 0 { delta_x / 2.0 } else { 0.0 };
+            let offset_x = if i % 2 != 0 { delta_x / 2.0 } else { 0.0 };
+
+            let mut x_coords = Vec::new();
             let mut x = offset_x;
             while x < width as f32 {
-                all_x.push(x + if width > 1 { rng.normal(sigma_x) } else { 0.0 });
-                all_y.push(y + if height > 1 { rng.normal(sigma_y) } else { 0.0 });
-                all_z.push(z + if depth > 1 { rng.normal(sigma_z) } else { 0.0 });
+                x_coords.push(x);
                 x += delta_x;
             }
-            row += 1;
+
+            let num_coords = x_coords.len();
+            let mut y_coords = vec![y; num_coords];
+            let mut z_coords = vec![z; num_coords];
+
+            for j in 0..num_coords {
+                x_coords[j] += if width > 1 { normal(sigma_x) } else { 0.0 };
+                y_coords[j] += if height > 1 { normal(sigma_y) } else { 0.0 };
+                z_coords[j] += if depth > 1 { normal(sigma_z) } else { 0.0 };
+            }
+
+            all_x_coords.extend(x_coords);
+            all_y_coords.extend(y_coords);
+            all_z_coords.extend(z_coords);
+
+            i += 1;
             y += delta_y;
         }
+        _k += 1;
         z += delta_z;
     }
 
-    (all_x, all_y, all_z)
+    (all_x_coords, all_y_coords, all_z_coords)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -100,21 +104,21 @@ pub fn artificial_tissue(
         z_coords[i] = z_coords[i].clamp(0.0, (depth - 1) as f32);
     }
 
-    let point_count = x_coords.len();
-    let mut point_list_data = vec![0.0_f32; point_count * 3];
-    point_list_data[..point_count].copy_from_slice(&x_coords);
-    point_list_data[point_count..2 * point_count].copy_from_slice(&y_coords);
-    point_list_data[2 * point_count..].copy_from_slice(&z_coords);
-    let point_list = Array::create_with_data(
-        point_count,
-        3,
-        1,
-        2,
-        MType::Buffer,
-        &point_list_data,
-        device,
-    )?;
-    let centroids = Array::create(width, height, depth, dim, LABEL, MType::Buffer, device)?;
+    let nb_points = x_coords.len();
+    let point_list = Array::create(nb_points, 3, 1, 2, DType::Float, MType::Buffer, device)?;
+    point_list
+        .lock()
+        .unwrap()
+        .write_from_region(&x_coords, [nb_points, 1, 1], [0, 0, 0])?;
+    point_list
+        .lock()
+        .unwrap()
+        .write_from_region(&y_coords, [nb_points, 1, 1], [0, 1, 0])?;
+    point_list
+        .lock()
+        .unwrap()
+        .write_from_region(&z_coords, [nb_points, 1, 1], [0, 2, 0])?;
+    let centroids = Array::create_from_array(&dst)?;
     tier2::pointlist_to_labelled_spots(device, &point_list, Some(centroids.clone()))?;
     tier2::extend_labeling_via_voronoi(device, &centroids, Some(dst))
 }

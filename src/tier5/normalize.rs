@@ -1,8 +1,8 @@
 use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
+use crate::execution::{evaluate, ParameterValue};
 use crate::tier0;
-use crate::tier1;
 use crate::tier2;
 use crate::tier4;
 use crate::types::DType;
@@ -18,6 +18,8 @@ pub fn normalize(
     high_percentile: f32,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
+    let new_min = 0.0f32;
+    let new_max = 1.0f32;
     let min = if low_percentile > 0.0 {
         tier4::percentile(device, src, low_percentile)?.round()
     } else {
@@ -28,10 +30,16 @@ pub fn normalize(
     } else {
         tier2::maximum_of_all_pixels(device, src)?
     };
-
-    let scale = 1.0 / (max - min);
-    let shifted = tier1::subtract_scalar_from_image(device, src, None, min)?;
-    let scaled = tier1::multiply_image_and_scalar(device, &shifted, None, scale)?;
-    let lower_clamped = tier1::maximum_image_and_scalar(device, &scaled, None, 0.0)?;
-    tier1::minimum_image_and_scalar(device, &lower_clamped, Some(dst), 1.0)
+    let constant = -(new_max - new_min) / (max - min);
+    evaluate(
+        device,
+        "fmin(fmax((lo - a) * c, 0.0f), 1.0f)",
+        &[
+            ParameterValue::Float(min),
+            ParameterValue::Array(src.clone()),
+            ParameterValue::Float(constant),
+        ],
+        &dst,
+    )?;
+    Ok(dst)
 }

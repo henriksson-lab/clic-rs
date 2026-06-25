@@ -15,26 +15,28 @@ pub fn histogram(
     minimum_intensity: f32,
     maximum_intensity: f32,
 ) -> Result<ArrayPtr> {
-    let num_bins = num_bins.max(1) as usize;
-    let dst = match dst {
-        Some(dst) => dst,
-        None => tier0::create_vector(num_bins, INDEX, device)?,
-    };
-    let (height, mtype) = {
+    let dst = tier0::create_vector(src, dst, num_bins as usize, INDEX, device)?;
+    let (height, mtype, src_device) = {
         let src = src.lock().unwrap();
-        (src.height(), src.mtype())
+        (src.height(), src.mtype(), src.device().clone())
     };
-    let partial_hist = Array::create(num_bins, 1, height, 3, INDEX, mtype, device)?;
+    let number_of_partial_histograms = height;
+    let partial_hist = Array::create(
+        num_bins as usize,
+        1,
+        number_of_partial_histograms,
+        3,
+        INDEX,
+        mtype,
+        &src_device,
+    )?;
 
-    let (minimum_intensity, maximum_intensity) =
-        if minimum_intensity.is_nan() || maximum_intensity.is_nan() {
-            (
-                tier2::minimum_of_all_pixels(device, src)?,
-                tier2::maximum_of_all_pixels(device, src)?,
-            )
-        } else {
-            (minimum_intensity, maximum_intensity)
-        };
+    let mut minimum_intensity = minimum_intensity;
+    let mut maximum_intensity = maximum_intensity;
+    if minimum_intensity.is_nan() || maximum_intensity.is_nan() {
+        minimum_intensity = tier2::minimum_of_all_pixels(device, src)?;
+        maximum_intensity = tier2::maximum_of_all_pixels(device, src)?;
+    }
 
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
@@ -45,16 +47,15 @@ pub fn histogram(
         ("step_size_y", ParameterValue::Int(1)),
         ("step_size_z", ParameterValue::Int(1)),
     ];
-    let constants = vec![(
-        "NUMBER_OF_HISTOGRAM_BINS",
-        ConstantValue::Int(num_bins as i32),
-    )];
+    let constants = vec![("NUMBER_OF_HISTOGRAM_BINS", ConstantValue::Int(num_bins))];
+    let range = [number_of_partial_histograms, 1, 1];
+    let local_range = [0, 0, 0];
     execute(
         device,
         ("histogram", include_str!("../../kernels/histogram.cl")),
         &params,
-        [height, 1, 1],
-        [0, 0, 0],
+        range,
+        local_range,
         &constants,
     )?;
     tier1::sum_z_projection(device, &partial_hist, Some(dst))

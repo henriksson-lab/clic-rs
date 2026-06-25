@@ -6,7 +6,6 @@ mod add_images_weighted;
 mod binary_operations;
 mod block_enumerate;
 mod circular_shift;
-mod common;
 mod convolve;
 mod copy;
 mod copy_slice;

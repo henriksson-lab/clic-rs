@@ -13,22 +13,16 @@ pub fn convolve(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src0, dst, DType::Float, device)?;
-    let global = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), dst.depth()]
-    };
+    let kernel = ("convolve", include_str!("../../kernels/convolve.cl"));
     let params = vec![
         ("src0", ParameterValue::Array(src0.clone())),
         ("src1", ParameterValue::Array(src1.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
-    execute(
-        device,
-        ("convolve", include_str!("../../kernels/convolve.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

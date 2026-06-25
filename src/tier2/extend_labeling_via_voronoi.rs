@@ -1,4 +1,4 @@
-use crate::array::{pull, Array, ArrayPtr};
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
@@ -11,8 +11,9 @@ pub fn extend_labeling_via_voronoi(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, LABEL, device)?;
-    let flip = tier1::copy(device, src, None)?;
-    let flop = tier0::create_like(&dst, None, DType::Unknown, device)?;
+    let flip = Array::create_from_array(&dst)?;
+    let flop = Array::create_from_array(&dst)?;
+    tier1::copy(device, src, Some(flip.clone()))?;
     let flag = Array::create(1, 1, 1, 1, DType::Int32, MType::Buffer, device)?;
     flag.lock().unwrap().fill(0.0)?;
 
@@ -24,16 +25,17 @@ pub fn extend_labeling_via_voronoi(
         } else {
             tier1::onlyzero_overwrite_maximum(device, &flop, &flag, Some(flip.clone()), "sphere")?;
         }
-        let flag_host: Vec<i32> = pull(&flag)?;
+        let mut flag_host = [0_i32; 1];
+        flag.lock().unwrap().read_to(&mut flag_host)?;
         flag_value = flag_host[0];
         flag.lock().unwrap().fill(0.0)?;
         iteration_count += 1;
     }
 
     if iteration_count % 2 == 0 {
-        tier1::copy(device, &flip, Some(dst.clone()))?;
+        flip.lock().unwrap().copy_to(&dst)?;
     } else {
-        tier1::copy(device, &flop, Some(dst.clone()))?;
+        flop.lock().unwrap().copy_to(&dst)?;
     }
     Ok(dst)
 }

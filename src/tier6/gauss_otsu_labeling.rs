@@ -27,5 +27,6 @@ pub fn gauss_otsu_labeling(
         outline_sigma,
     )?;
     let binary = tier4::threshold_otsu(device, &temp, None)?;
-    tier5::connected_component_labeling(device, &binary, Some(dst), "box")
+    tier5::connected_component_labeling(device, &binary, Some(dst.clone()), "box")?;
+    Ok(dst)
 }

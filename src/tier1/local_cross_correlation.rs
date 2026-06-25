@@ -15,25 +15,19 @@ pub fn local_cross_correlation(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let oclkernel = (
+        "local_cross_correlation",
+        include_str!("../../kernels/local_cross_correlation.cl"),
+    );
     let params = vec![
         ("src0", ParameterValue::Array(src.clone())),
         ("src1", ParameterValue::Array(kernel.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
-    execute(
-        device,
-        (
-            "local_cross_correlation",
-            include_str!("../../kernels/local_cross_correlation.cl"),
-        ),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, oclkernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

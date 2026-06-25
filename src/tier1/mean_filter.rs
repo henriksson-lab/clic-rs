@@ -3,6 +3,7 @@ use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::execution::{execute, execute_separable, ParameterValue};
 use crate::tier0;
+use crate::types::DType;
 
 /// Mean filter with box (separable) or sphere connectivity.
 pub fn mean_filter(
@@ -14,46 +15,31 @@ pub fn mean_filter(
     radius_z: f32,
     connectivity: &str,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let r = [
-        crate::utils::radius2kernelsize(radius_x),
-        crate::utils::radius2kernelsize(radius_y),
-        crate::utils::radius2kernelsize(radius_z),
-    ];
+    let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
+    let r_x = crate::utils::radius2kernelsize(radius_x);
+    let r_y = crate::utils::radius2kernelsize(radius_y);
+    let r_z = crate::utils::radius2kernelsize(radius_z);
     if connectivity == "sphere" {
-        let global = {
-            let l = dst.lock().unwrap();
-            [l.width(), l.height(), l.depth()]
-        };
+        let kernel = ("mean_sphere", include_str!("../../kernels/mean_sphere.cl"));
         let params = vec![
             ("src", ParameterValue::Array(src.clone())),
             ("dst", ParameterValue::Array(dst.clone())),
-            ("scalar0", ParameterValue::Int(r[0])),
-            ("scalar1", ParameterValue::Int(r[1])),
-            ("scalar2", ParameterValue::Int(r[2])),
+            ("scalar0", ParameterValue::Int(r_x)),
+            ("scalar1", ParameterValue::Int(r_y)),
+            ("scalar2", ParameterValue::Int(r_z)),
         ];
-        execute(
-            device,
-            ("mean_sphere", include_str!("../../kernels/mean_sphere.cl")),
-            &params,
-            global,
-            [0, 0, 0],
-            &[],
-        )?;
+        let range = {
+            let l = dst.lock().unwrap();
+            [l.width(), l.height(), l.depth()]
+        };
+        execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     } else {
+        let kernel = (
+            "mean_separable",
+            include_str!("../../kernels/mean_separable.cl"),
+        );
         let sigma = [radius_x, radius_y, radius_z];
-        execute_separable(
-            device,
-            (
-                "mean_separable",
-                include_str!("../../kernels/mean_separable.cl"),
-            ),
-            src,
-            &dst,
-            sigma,
-            r,
-            [0, 0, 0],
-        )?;
+        execute_separable(device, kernel, src, &dst, sigma, [r_x, r_y, r_z], [0, 0, 0])?;
     }
     Ok(dst)
 }

@@ -11,25 +11,17 @@ pub fn clahe(
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
     tile_size: i32,
-    clip_limit: f32,
-    minimum_intensity: f32,
-    maximum_intensity: f32,
+    mut clip_limit: f32,
+    mut minimum_intensity: f32,
+    mut maximum_intensity: f32,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Unknown, device)?;
-    let (minimum_intensity, maximum_intensity) =
-        if minimum_intensity.is_nan() || maximum_intensity.is_nan() {
-            (
-                tier2::minimum_of_all_pixels(device, src)?,
-                tier2::maximum_of_all_pixels(device, src)?,
-            )
-        } else {
-            (minimum_intensity, maximum_intensity)
-        };
-    let clip_limit = clip_limit * 255.0;
-    let global = {
-        let src = src.lock().unwrap();
-        [src.width(), src.height(), src.depth()]
-    };
+    if minimum_intensity.is_nan() || maximum_intensity.is_nan() {
+        minimum_intensity = tier2::minimum_of_all_pixels(device, src)?;
+        maximum_intensity = tier2::maximum_of_all_pixels(device, src)?;
+    }
+    clip_limit *= 255.0;
+    let kernel = ("clahe", include_str!("../../kernels/clahe.cl"));
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
@@ -38,13 +30,10 @@ pub fn clahe(
         ("minIntensity", ParameterValue::Float(minimum_intensity)),
         ("maxIntensity", ParameterValue::Float(maximum_intensity)),
     ];
-    execute(
-        device,
-        ("clahe", include_str!("../../kernels/clahe.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let src = src.lock().unwrap();
+        [src.width(), src.height(), src.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

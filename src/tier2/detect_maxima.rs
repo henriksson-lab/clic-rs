@@ -25,25 +25,19 @@ pub fn detect_maxima(
         radius_z,
         connectivity,
     )?;
-    let global = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), dst.depth()]
-    };
+    let kernel = (
+        "detect_maxima",
+        include_str!("../../kernels/detect_maxima.cl"),
+    );
     let params = vec![
         ("src", ParameterValue::Array(temp)),
         ("dst", ParameterValue::Array(dst.clone())),
     ];
-    execute(
-        device,
-        (
-            "detect_maxima",
-            include_str!("../../kernels/detect_maxima.cl"),
-        ),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }
 

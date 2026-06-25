@@ -5,40 +5,28 @@ use crate::execution::{execute, ConstantValue, ParameterValue};
 use crate::tier0;
 use crate::types::INDEX;
 
-fn global_from(arr: &ArrayPtr) -> [usize; 3] {
-    let l = arr.lock().unwrap();
-    [l.width(), l.height(), l.depth()]
-}
-
-fn set_slice(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    dimension: i32,
-    index: i32,
-    value: f32,
-) -> Result<ArrayPtr> {
+/// Set one row to a constant value.
+///
+/// Mirrors CLIc's `set_row_func`.
+pub fn set_row(device: &DeviceArc, src: &ArrayPtr, row_index: i32, value: f32) -> Result<ArrayPtr> {
     let params = vec![
         ("dst", ParameterValue::Array(src.clone())),
-        ("dimension", ParameterValue::Int(dimension)),
-        ("index", ParameterValue::Int(index)),
+        ("dimension", ParameterValue::Int(0)),
+        ("index", ParameterValue::Int(row_index)),
         ("scalar", ParameterValue::Float(value)),
     ];
     execute(
         device,
         ("set_slice", include_str!("../../kernels/set_slice.cl")),
         &params,
-        global_from(src),
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
         [0, 0, 0],
         &[],
     )?;
     Ok(src.clone())
-}
-
-/// Set one row to a constant value.
-///
-/// Mirrors CLIc's `set_row_func`.
-pub fn set_row(device: &DeviceArc, src: &ArrayPtr, row_index: i32, value: f32) -> Result<ArrayPtr> {
-    set_slice(device, src, 0, row_index, value)
 }
 
 /// Set one column to a constant value.
@@ -50,7 +38,24 @@ pub fn set_column(
     column_index: i32,
     value: f32,
 ) -> Result<ArrayPtr> {
-    set_slice(device, src, 1, column_index, value)
+    let params = vec![
+        ("dst", ParameterValue::Array(src.clone())),
+        ("dimension", ParameterValue::Int(1)),
+        ("index", ParameterValue::Int(column_index)),
+        ("scalar", ParameterValue::Float(value)),
+    ];
+    execute(
+        device,
+        ("set_slice", include_str!("../../kernels/set_slice.cl")),
+        &params,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [0, 0, 0],
+        &[],
+    )?;
+    Ok(src.clone())
 }
 
 /// Set one z-plane to a constant value.
@@ -62,19 +67,20 @@ pub fn set_plane(
     plane_index: i32,
     value: f32,
 ) -> Result<ArrayPtr> {
-    set_slice(device, src, 2, plane_index, value)
-}
-
-fn set_ramp_axis(device: &DeviceArc, src: &ArrayPtr, dimension: i32) -> Result<ArrayPtr> {
     let params = vec![
         ("dst", ParameterValue::Array(src.clone())),
-        ("dimension", ParameterValue::Int(dimension)),
+        ("dimension", ParameterValue::Int(2)),
+        ("index", ParameterValue::Int(plane_index)),
+        ("scalar", ParameterValue::Float(value)),
     ];
     execute(
         device,
-        ("set_ramp", include_str!("../../kernels/set_ramp.cl")),
+        ("set_slice", include_str!("../../kernels/set_slice.cl")),
         &params,
-        global_from(src),
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
         [0, 0, 0],
         &[],
     )?;
@@ -85,47 +91,64 @@ fn set_ramp_axis(device: &DeviceArc, src: &ArrayPtr, dimension: i32) -> Result<A
 ///
 /// Mirrors CLIc's `set_ramp_x_func`.
 pub fn set_ramp_x(device: &DeviceArc, src: &ArrayPtr) -> Result<ArrayPtr> {
-    set_ramp_axis(device, src, 0)
+    let params = vec![
+        ("dst", ParameterValue::Array(src.clone())),
+        ("dimension", ParameterValue::Int(0)),
+    ];
+    execute(
+        device,
+        ("set_ramp", include_str!("../../kernels/set_ramp.cl")),
+        &params,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [0, 0, 0],
+        &[],
+    )?;
+    Ok(src.clone())
 }
 
 /// Fill pixels with their y coordinate.
 ///
 /// Mirrors CLIc's `set_ramp_y_func`.
 pub fn set_ramp_y(device: &DeviceArc, src: &ArrayPtr) -> Result<ArrayPtr> {
-    set_ramp_axis(device, src, 1)
+    let params = vec![
+        ("dst", ParameterValue::Array(src.clone())),
+        ("dimension", ParameterValue::Int(1)),
+    ];
+    execute(
+        device,
+        ("set_ramp", include_str!("../../kernels/set_ramp.cl")),
+        &params,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [0, 0, 0],
+        &[],
+    )?;
+    Ok(src.clone())
 }
 
 /// Fill pixels with their z coordinate.
 ///
 /// Mirrors CLIc's `set_ramp_z_func`.
 pub fn set_ramp_z(device: &DeviceArc, src: &ArrayPtr) -> Result<ArrayPtr> {
-    set_ramp_axis(device, src, 2)
-}
-
-fn set_where_x_compare_y(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    value: f32,
-    comparison_op: &str,
-) -> Result<ArrayPtr> {
     let params = vec![
         ("dst", ParameterValue::Array(src.clone())),
-        ("scalar", ParameterValue::Float(value)),
+        ("dimension", ParameterValue::Int(2)),
     ];
-    let constants = vec![(
-        "COMPARISON_OP(x,y)",
-        ConstantValue::Str(comparison_op.to_string()),
-    )];
     execute(
         device,
-        (
-            "set_where_x_compare_y",
-            include_str!("../../kernels/set_where_x_compare_y.cl"),
-        ),
+        ("set_ramp", include_str!("../../kernels/set_ramp.cl")),
         &params,
-        global_from(src),
-        [1, 1, 1],
-        &constants,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [0, 0, 0],
+        &[],
     )?;
     Ok(src.clone())
 }
@@ -134,7 +157,29 @@ fn set_where_x_compare_y(
 ///
 /// Mirrors CLIc's `set_where_x_equals_y_func`.
 pub fn set_where_x_equals_y(device: &DeviceArc, src: &ArrayPtr, value: f32) -> Result<ArrayPtr> {
-    set_where_x_compare_y(device, src, value, "(x == y)")
+    let params = vec![
+        ("dst", ParameterValue::Array(src.clone())),
+        ("scalar", ParameterValue::Float(value)),
+    ];
+    let constants = vec![(
+        "COMPARISON_OP(x,y)",
+        ConstantValue::Str("(x == y)".to_string()),
+    )];
+    execute(
+        device,
+        (
+            "set_where_x_compare_y",
+            include_str!("../../kernels/set_where_x_compare_y.cl"),
+        ),
+        &params,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [1, 1, 1],
+        &constants,
+    )?;
+    Ok(src.clone())
 }
 
 /// Set pixels where `x > y`.
@@ -145,7 +190,29 @@ pub fn set_where_x_greater_than_y(
     src: &ArrayPtr,
     value: f32,
 ) -> Result<ArrayPtr> {
-    set_where_x_compare_y(device, src, value, "(x > y)")
+    let params = vec![
+        ("dst", ParameterValue::Array(src.clone())),
+        ("scalar", ParameterValue::Float(value)),
+    ];
+    let constants = vec![(
+        "COMPARISON_OP(x,y)",
+        ConstantValue::Str("(x > y)".to_string()),
+    )];
+    execute(
+        device,
+        (
+            "set_where_x_compare_y",
+            include_str!("../../kernels/set_where_x_compare_y.cl"),
+        ),
+        &params,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [1, 1, 1],
+        &constants,
+    )?;
+    Ok(src.clone())
 }
 
 /// Set pixels where `x < y`.
@@ -156,7 +223,29 @@ pub fn set_where_x_smaller_than_y(
     src: &ArrayPtr,
     value: f32,
 ) -> Result<ArrayPtr> {
-    set_where_x_compare_y(device, src, value, "(x < y)")
+    let params = vec![
+        ("dst", ParameterValue::Array(src.clone())),
+        ("scalar", ParameterValue::Float(value)),
+    ];
+    let constants = vec![(
+        "COMPARISON_OP(x,y)",
+        ConstantValue::Str("(x < y)".to_string()),
+    )];
+    execute(
+        device,
+        (
+            "set_where_x_compare_y",
+            include_str!("../../kernels/set_where_x_compare_y.cl"),
+        ),
+        &params,
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
+        [1, 1, 1],
+        &constants,
+    )?;
+    Ok(src.clone())
 }
 
 /// Write the linear pixel index plus `offset` at non-zero source pixels.
@@ -181,7 +270,10 @@ pub fn set_nonzero_pixels_to_pixelindex(
             include_str!("../../kernels/set_nonzero_pixels_to_pixelindex.cl"),
         ),
         &params,
-        global_from(&dst),
+        {
+            let dst = dst.lock().unwrap();
+            [dst.width(), dst.height(), dst.depth()]
+        },
         [0, 0, 0],
         &[],
     )?;
@@ -191,16 +283,19 @@ pub fn set_nonzero_pixels_to_pixelindex(
 /// Set all pixels to a constant value.
 ///
 /// Mirrors CLIc's `set_func`.
-pub fn set(device: &DeviceArc, src: &ArrayPtr, value: f32) -> Result<ArrayPtr> {
+pub fn set(device: &DeviceArc, src: &ArrayPtr, scalar: f32) -> Result<ArrayPtr> {
     let params = vec![
         ("dst", ParameterValue::Array(src.clone())),
-        ("scalar", ParameterValue::Float(value)),
+        ("scalar", ParameterValue::Float(scalar)),
     ];
     execute(
         device,
         ("set", include_str!("../../kernels/set.cl")),
         &params,
-        global_from(src),
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
         [0, 0, 0],
         &[],
     )?;
@@ -222,7 +317,10 @@ pub fn set_image_borders(device: &DeviceArc, src: &ArrayPtr, value: f32) -> Resu
             include_str!("../../kernels/set_image_borders.cl"),
         ),
         &params,
-        global_from(src),
+        {
+            let src = src.lock().unwrap();
+            [src.width(), src.height(), src.depth()]
+        },
         [0, 0, 0],
         &[],
     )?;

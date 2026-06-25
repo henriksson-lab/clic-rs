@@ -1,6 +1,7 @@
-use lru::LruCache;
-use sha2::{Digest, Sha256};
-use std::num::NonZeroUsize;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -10,45 +11,63 @@ use opencl3::program::Program;
 
 const PROGRAM_CACHE_CAPACITY: usize = 128;
 
-/// LRU cache of compiled OpenCL programs, keyed by SHA-256 of the full program source.
+/// LRU cache of compiled OpenCL programs, keyed by a hash of the full program source.
 pub struct ProgramCache {
-    inner: LruCache<String, Arc<Program>>,
+    cache: HashMap<String, Arc<Program>>,
+    lru: VecDeque<String>,
 }
 
 impl ProgramCache {
     pub fn new() -> Self {
         Self {
-            inner: LruCache::new(NonZeroUsize::new(PROGRAM_CACHE_CAPACITY).unwrap()),
+            cache: HashMap::with_capacity(PROGRAM_CACHE_CAPACITY),
+            lru: VecDeque::with_capacity(PROGRAM_CACHE_CAPACITY),
         }
     }
 
     pub fn get(&mut self, key: &str) -> Option<Arc<Program>> {
-        self.inner.get(key).cloned()
+        let program = self.cache.get(key).cloned()?;
+        self.lru.retain(|item| item != key);
+        self.lru.push_back(key.to_string());
+        Some(program)
     }
 
     pub fn put(&mut self, key: String, program: Arc<Program>) {
-        self.inner.put(key, program);
+        if let Some(entry) = self.cache.get_mut(&key) {
+            self.lru.retain(|item| item != &key);
+            self.lru.push_back(key);
+            *entry = program;
+            return;
+        }
+
+        if self.cache.len() >= PROGRAM_CACHE_CAPACITY {
+            if let Some(oldest) = self.lru.pop_front() {
+                self.cache.remove(&oldest);
+            }
+        }
+
+        self.lru.push_back(key.clone());
+        self.cache.insert(key, program);
     }
 
     pub fn contains(&self, key: &str) -> bool {
-        self.inner.contains(key)
+        self.cache.contains_key(key)
     }
 
     /// Get the number of cached programs.
     pub fn size(&self) -> usize {
-        self.inner.len()
+        self.cache.len()
     }
 
     /// Clear all cached programs.
     pub fn clear(&mut self) {
-        self.inner.clear();
+        self.cache.clear();
+        self.lru.clear();
     }
 }
 
-impl Default for ProgramCache {
-    fn default() -> Self {
-        Self::new()
-    }
+impl Drop for ProgramCache {
+    fn drop(&mut self) {}
 }
 
 // ── Disk cache (singleton) ───────────────────────────────────────────────────
@@ -57,7 +76,7 @@ impl Default for ProgramCache {
 /// Stored at `~/.cache/clesperanto/<device_hash>/<source_hash>.bin`.
 /// Disabled when `CLESPERANTO_NO_CACHE` environment variable is set.
 pub struct DiskCache {
-    root: Option<PathBuf>,
+    root: PathBuf,
 }
 
 static DISK_CACHE: OnceLock<DiskCache> = OnceLock::new();
@@ -65,35 +84,55 @@ static DISK_CACHE: OnceLock<DiskCache> = OnceLock::new();
 impl DiskCache {
     /// Access the global DiskCache singleton.
     pub fn instance() -> &'static DiskCache {
-        DISK_CACHE.get_or_init(|| {
-            if std::env::var("CLESPERANTO_NO_CACHE").is_ok() {
-                return DiskCache { root: None };
+        DISK_CACHE.get_or_init(Self::new)
+    }
+
+    pub fn new() -> Self {
+        Self {
+            root: Self::resolve_cache_directory(),
+        }
+    }
+
+    pub fn resolve_cache_directory() -> PathBuf {
+        #[cfg(windows)]
+        {
+            if let Some(path) = std::env::var_os("LOCALAPPDATA") {
+                return PathBuf::from(path).join("clesperanto");
             }
-            let root = dirs::cache_dir()
-                .map(|d| d.join("clesperanto"))
-                .or_else(|| Some(PathBuf::from(".cache/clesperanto")));
-            DiskCache { root }
-        })
+            eprintln!("Failed to get AppData\\Local directory");
+            return std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("clesperanto");
+        }
+
+        #[cfg(not(windows))]
+        {
+            if let Some(home_dir) = std::env::var_os("HOME") {
+                return PathBuf::from(home_dir).join(".cache").join("clesperanto");
+            }
+            eprintln!("Failed to get user home directory");
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(".cache")
+                .join("clesperanto")
+        }
     }
 
-    /// SHA-256 hex digest of the given string (used for cache keys).
+    /// Hash string of the given input (used for cache keys).
     pub fn hash(input: &str) -> String {
-        hex::encode(Sha256::digest(input.as_bytes()))
+        let mut hasher = DefaultHasher::new();
+        input.hash(&mut hasher);
+        hasher.finish().to_string()
     }
 
-    pub fn get_file_path(
-        &self,
-        device_hash: &str,
-        source_hash: &str,
-        ext: &str,
-    ) -> Option<PathBuf> {
+    pub fn get_file_path(&self, device_hash: &str, source_hash: &str, ext: &str) -> PathBuf {
         self.root
-            .as_ref()
-            .map(|r| r.join(device_hash).join(format!("{}.{}", source_hash, ext)))
+            .join(device_hash)
+            .join(format!("{}.{}", source_hash, ext))
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.root.is_some() && std::env::var("CLESPERANTO_NO_CACHE").is_err()
+        std::env::var("CLESPERANTO_NO_CACHE").is_err()
     }
 
     pub fn set_enabled(&self, flag: bool) {
@@ -104,46 +143,99 @@ impl DiskCache {
         }
     }
 
-    pub fn get_cache_directory(&self) -> Option<&std::path::Path> {
-        self.root.as_deref()
+    pub fn get_cache_directory(&self) -> &std::path::Path {
+        self.root.as_path()
     }
 
     pub fn exists(&self, device_hash: &str, source_hash: &str, ext: &str) -> bool {
-        self.get_file_path(device_hash, source_hash, ext)
-            .is_some_and(|path| path.exists())
+        self.get_file_path(device_hash, source_hash, ext).exists()
     }
 
-    /// Load a cached binary. Returns `None` if not found or cache is disabled.
+    /// Load a cached binary. Returns `None` if not found or unreadable.
     pub fn load_binary(&self, device_hash: &str, source_hash: &str, ext: &str) -> Option<Vec<u8>> {
-        if !self.is_enabled() {
+        let binary_path = self.get_file_path(device_hash, source_hash, ext);
+        if !binary_path.exists() {
             return None;
         }
-        let path = self.get_file_path(device_hash, source_hash, ext)?;
-        std::fs::read(&path).ok()
+
+        let mut infile = match std::fs::File::open(&binary_path) {
+            Ok(file) => file,
+            Err(_) => {
+                eprintln!(
+                    "Error: Failed to open cache file: {}",
+                    binary_path.display()
+                );
+                return None;
+            }
+        };
+
+        let file_size = match infile.seek(SeekFrom::End(0)) {
+            Ok(size) => size as usize,
+            Err(_) => {
+                eprintln!(
+                    "Error: Failed to read cache file: {}",
+                    binary_path.display()
+                );
+                return None;
+            }
+        };
+        if file_size == 0 {
+            eprintln!("Error: Cache file is empty: {}", binary_path.display());
+            return None;
+        }
+
+        if infile.seek(SeekFrom::Start(0)).is_err() {
+            eprintln!(
+                "Error: Failed to read cache file: {}",
+                binary_path.display()
+            );
+            return None;
+        }
+
+        let mut data = vec![0; file_size];
+        if infile.read_exact(&mut data).is_err() {
+            eprintln!(
+                "Error: Failed to read cache file: {}",
+                binary_path.display()
+            );
+            return None;
+        }
+        Some(data)
     }
 
     /// Save a compiled binary to the disk cache.
     pub fn save_binary(&self, device_hash: &str, source_hash: &str, ext: &str, data: &[u8]) {
-        if !self.is_enabled() {
-            return;
+        let binary_path = self.get_file_path(device_hash, source_hash, ext);
+        if let Some(parent) = binary_path.parent() {
+            std::fs::create_dir_all(parent).unwrap_or_else(|_| {
+                panic!(
+                    "Error: Failed to open cache file for writing: {}",
+                    binary_path.display()
+                )
+            });
         }
-        let Some(path) = self.get_file_path(device_hash, source_hash, ext) else {
-            return;
-        };
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(&path, data);
+        let mut outfile = std::fs::File::create(&binary_path).unwrap_or_else(|_| {
+            panic!(
+                "Error: Failed to open cache file for writing: {}",
+                binary_path.display()
+            )
+        });
+        outfile.write_all(data).unwrap_or_else(|_| {
+            panic!(
+                "Error: Failed to write cache file: {}",
+                binary_path.display()
+            )
+        });
     }
+}
+
+impl Drop for DiskCache {
+    fn drop(&mut self) {}
 }
 
 // ── Shared cache mutex wrapper used inside OpenCLDevice ─────────────────────
 
 pub type SharedProgramCache = Arc<Mutex<ProgramCache>>;
-
-pub fn new_shared_program_cache() -> SharedProgramCache {
-    Arc::new(Mutex::new(ProgramCache::new()))
-}
 
 pub fn is_cache_enabled() -> bool {
     DiskCache::instance().is_enabled()
@@ -177,9 +269,18 @@ mod tests {
     }
 
     #[test]
+    fn disk_cache_resolve_directory_uses_clesperanto_leaf() {
+        let path = DiskCache::resolve_cache_directory();
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("clesperanto")
+        );
+    }
+
+    #[test]
     fn disk_cache_save_load_roundtrip() {
         let cache = DiskCache::instance();
-        if cache.root.is_none() {
+        if !cache.is_enabled() {
             return; // disk cache disabled
         }
         let device_hash = "test_device_abc";

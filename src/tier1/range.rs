@@ -24,8 +24,8 @@ pub fn range(
     step_z: i32,
 ) -> Result<ArrayPtr> {
     let (src_width, src_height, src_depth, dtype) = {
-        let s = src.lock().unwrap();
-        (s.width(), s.height(), s.depth(), s.dtype())
+        let src = src.lock().unwrap();
+        (src.width(), src.height(), src.depth(), src.dtype())
     };
 
     let dst_width = ((stop_x - start_x).abs() / step_x.abs().max(1)) as usize;
@@ -40,10 +40,7 @@ pub fn range(
     let (start_z, _, step_z) =
         correct_range(Some(start_z), Some(stop_z), Some(step_z), src_depth as i32);
 
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let kernel = ("range", include_str!("../../kernels/range.cl"));
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
@@ -54,13 +51,10 @@ pub fn range(
         ("start_z", ParameterValue::Int(start_z)),
         ("step_z", ParameterValue::Int(step_z)),
     ];
-    execute(
-        device,
-        ("range", include_str!("../../kernels/range.cl")),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }

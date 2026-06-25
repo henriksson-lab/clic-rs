@@ -1,84 +1,30 @@
 use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
-use crate::execution::{execute, ParameterValue};
+use crate::execution::{evaluate, ParameterValue};
 use crate::tier0;
 use crate::tier1;
 use crate::tier2;
 use crate::types::{DType, MType, BINARY};
 
-const CONTOUR_EVOLUTION_SRC: &str = r#"
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
-
-__kernel void contour_evolution(
-    IMAGE_evolution_TYPE evolution,
-    IMAGE_image_TYPE image,
-    IMAGE_dst_TYPE dst,
-    const float c0,
-    const float c1,
-    const float lambda1,
-    const float lambda2
-)
-{
-    const int x = get_global_id(0);
-    const int y = get_global_id(1);
-    const int z = get_global_id(2);
-    const float e = (float) READ_IMAGE(evolution, sampler, POS_evolution_INSTANCE(x,y,z,0)).x;
-    const float a = (float) READ_IMAGE(image, sampler, POS_image_INSTANCE(x,y,z,0)).x;
-    const float value = e * (lambda1 * pow(a + c1, 2.0f) - lambda2 * pow(a + c0, 2.0f));
-    WRITE_IMAGE(dst, POS_dst_INSTANCE(x,y,z,0), CONVERT_dst_PIXEL_TYPE(value));
-}
-"#;
-
-const APPLY_CONTOUR_EVOLUTION_SRC: &str = r#"
-__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
-
-__kernel void apply_contour_evolution(
-    IMAGE_contour_TYPE contour,
-    IMAGE_evolution_TYPE evolution
-)
-{
-    const int x = get_global_id(0);
-    const int y = get_global_id(1);
-    const int z = get_global_id(2);
-    const float b = (float) READ_IMAGE(contour, sampler, POS_contour_INSTANCE(x,y,z,0)).x;
-    const float a = (float) READ_IMAGE(evolution, sampler, POS_evolution_INSTANCE(x,y,z,0)).x;
-    const float value = b * (a == 0.0f) + (a < 0.0f);
-    WRITE_IMAGE(contour, POS_contour_INSTANCE(x,y,z,0), CONVERT_contour_PIXEL_TYPE(value));
-}
-"#;
-
-fn global_from(arr: &ArrayPtr) -> [usize; 3] {
-    let arr = arr.lock().unwrap();
-    [arr.width(), arr.height(), arr.depth()]
-}
-
-fn create_checkerboard_init(
-    device: &DeviceArc,
-    src: &ArrayPtr,
-    square_size: usize,
-) -> Result<ArrayPtr> {
-    let (width, height, depth, dim, mtype) = {
-        let src = src.lock().unwrap();
-        (
-            src.width(),
-            src.height(),
-            src.depth(),
-            src.dim(),
-            src.mtype(),
-        )
+fn create_checkerboard_init(_src: &ArrayPtr, dst: &ArrayPtr, square_size: usize) -> Result<()> {
+    let (width, height, depth) = {
+        let dst = dst.lock().unwrap();
+        (dst.width(), dst.height(), dst.depth())
     };
-    let mut data = vec![0_u8; width * height * depth];
+    let mut checkerboard = vec![0_u8; width * height * depth];
     for z in 0..depth {
         for y in 0..height {
             for x in 0..width {
+                // Calculate the index for the 1D vector
                 let index = z * width * height + y * width + x;
-                data[index] =
+                // Determine the checkerboard pattern value
+                checkerboard[index] =
                     (((x / square_size) + (y / square_size) + (z / square_size)) % 2) as u8;
             }
         }
     }
-    Array::create_with_data(width, height, depth, dim, mtype, &data, device)
+    dst.lock().unwrap().write_from(&checkerboard)
 }
 
 fn compute_contour_score(device: &DeviceArc, image: &ArrayPtr, contour: &ArrayPtr) -> Result<f32> {
@@ -93,18 +39,31 @@ fn compute_gradient_magnitude(
     contour: &ArrayPtr,
     gradient_magnitude: &ArrayPtr,
 ) -> Result<()> {
+    let gradient_along_axis = Array::create_from_array(gradient_magnitude)?;
+    let absolute_gradient_along_axis = Array::create_from_array(gradient_magnitude)?;
     gradient_magnitude.lock().unwrap().fill(0.0)?;
     let dim = contour.lock().unwrap().dimension();
-    for axis in 0..dim {
-        let gradient = match axis {
-            0 => tier1::gradient_x(device, contour, None)?,
-            1 => tier1::gradient_y(device, contour, None)?,
-            _ => tier1::gradient_z(device, contour, None)?,
+    for d in 0..dim {
+        match d {
+            0 => {
+                tier1::gradient_x(device, contour, Some(gradient_along_axis.clone()))?;
+            }
+            1 => {
+                tier1::gradient_y(device, contour, Some(gradient_along_axis.clone()))?;
+            }
+            2 => {
+                tier1::gradient_z(device, contour, Some(gradient_along_axis.clone()))?;
+            }
+            _ => {}
         };
-        let absolute_gradient = tier1::absolute(device, &gradient, None)?;
+        tier1::absolute(
+            device,
+            &gradient_along_axis,
+            Some(absolute_gradient_along_axis.clone()),
+        )?;
         tier1::add_images_weighted(
             device,
-            &absolute_gradient,
+            &absolute_gradient_along_axis,
             gradient_magnitude,
             Some(gradient_magnitude.clone()),
             1.0,
@@ -123,22 +82,19 @@ fn compute_contour_evolution(
     lambda1: f32,
     lambda2: f32,
 ) -> Result<()> {
-    let params = vec![
-        ("evolution", ParameterValue::Array(evolution.clone())),
-        ("image", ParameterValue::Array(image.clone())),
-        ("dst", ParameterValue::Array(evolution.clone())),
-        ("c0", ParameterValue::Float(c0)),
-        ("c1", ParameterValue::Float(c1)),
-        ("lambda1", ParameterValue::Float(lambda1)),
-        ("lambda2", ParameterValue::Float(lambda2)),
-    ];
-    execute(
+    // magnitude * (lambda1 * (image - c1) ** 2 - lambda2 * (image - c0) ** 2)
+    evaluate(
         device,
-        ("contour_evolution", CONTOUR_EVOLUTION_SRC),
-        &params,
-        global_from(evolution),
-        [0, 0, 0],
-        &[],
+        "e * (l1 * pow(a + c1, 2.0f) - l2 * pow(a + c0, 2.0f))",
+        &[
+            ParameterValue::Array(evolution.clone()),
+            ParameterValue::Float(lambda1),
+            ParameterValue::Array(image.clone()),
+            ParameterValue::Float(c1),
+            ParameterValue::Float(lambda2),
+            ParameterValue::Float(c0),
+        ],
+        evolution,
     )
 }
 
@@ -147,26 +103,30 @@ fn apply_contour_evolution(
     evolution: &ArrayPtr,
     contour: &ArrayPtr,
 ) -> Result<()> {
-    let params = vec![
-        ("contour", ParameterValue::Array(contour.clone())),
-        ("evolution", ParameterValue::Array(evolution.clone())),
-    ];
-    execute(
+    // auto evolution_pos = tier1::greater_constant_func(device, evolution, nullptr, 0);
+    // auto evolution_neg = tier1::smaller_constant_func(device, evolution, nullptr, 0);
+    // auto evolution_or = tier1::binary_or_func(device, evolution_pos, evolution_neg, nullptr);
+    // auto mask = tier1::binary_not_func(device, evolution_or, nullptr);
+    // auto masked_evolution = tier1::mask_func(device, contour, mask, nullptr);
+    // tier1::add_images_weighted_func(device, masked_evolution, evolution_neg, contour, 1, 1);
+
+    evaluate(
         device,
-        ("apply_contour_evolution", APPLY_CONTOUR_EVOLUTION_SRC),
-        &params,
-        global_from(contour),
-        [0, 0, 0],
-        &[],
+        "b * (a == 0.0f) + (a < 0.0f)",
+        &[
+            ParameterValue::Array(contour.clone()),
+            ParameterValue::Array(evolution.clone()),
+        ],
+        contour,
     )
 }
 
-fn smooth_contour(device: &DeviceArc, dst: &ArrayPtr, iterations: i32) -> Result<()> {
-    if iterations == 0 {
+fn smooth_contour(device: &DeviceArc, dst: &ArrayPtr, iteration: i32) -> Result<()> {
+    if iteration == 0 {
         return Ok(());
     }
     let temp = tier0::create_like(dst, None, DType::Unknown, device)?;
-    for i in 0..iterations {
+    for i in 0..iteration {
         if i % 2 == 0 {
             tier1::binary_supinf(device, dst, Some(temp.clone()))?;
             tier1::binary_infsup(device, &temp, Some(dst.clone()))?;
@@ -187,16 +147,26 @@ pub fn morphological_chan_vese(
     lambda1: f32,
     lambda2: f32,
 ) -> Result<ArrayPtr> {
+    // WARINING: dst MUST be binary
     let dst = match dst {
         Some(dst) => dst,
-        None => create_checkerboard_init(device, src, 5)?,
+        None => {
+            // dst is the initialisation contour
+            // if not provided, use a checkerboard pattern as initialisation
+            let dst = tier0::create_like(src, None, BINARY, device)?;
+            create_checkerboard_init(src, &dst, 5)?;
+            dst
+        }
     };
+    // enforce contour (dst) to be binary
     tier1::greater_constant(device, &dst, Some(dst.clone()), 0.0)?;
 
-    let outside_contour = tier0::create_like(&dst, None, BINARY, device)?;
+    let mut c0: f32;
+    let mut c1: f32;
+    let outside_contour = Array::create_from_array(&dst)?;
     let (width, height, depth, dim) = {
         let dst = dst.lock().unwrap();
-        (dst.width(), dst.height(), dst.depth(), dst.dim())
+        (dst.width(), dst.height(), dst.depth(), dst.dimension())
     };
     let gradient_magnitude = Array::create(
         width,
@@ -208,14 +178,27 @@ pub fn morphological_chan_vese(
         device,
     )?;
 
-    for _ in 0..num_iter {
-        let c1 = compute_contour_score(device, src, &dst)?;
+    let mut ite = 0;
+    while ite < num_iter {
+        // compute of inside contour score
+        c1 = compute_contour_score(device, src, &dst)?;
+        // compute of outside contour score (on inverted dst)
         tier1::binary_not(device, &dst, Some(outside_contour.clone()))?;
-        let c0 = compute_contour_score(device, src, &outside_contour)?;
+        c0 = compute_contour_score(device, src, &outside_contour)?;
+
+        // compute gradient magnitude into temp_3
         compute_gradient_magnitude(device, &dst, &gradient_magnitude)?;
+
+        // compute contour evolution according to gradient and score on contour
         compute_contour_evolution(device, src, &gradient_magnitude, c0, c1, lambda1, lambda2)?;
+
+        // apply contour update on contour image
         apply_contour_evolution(device, &gradient_magnitude, &dst)?;
+
+        // smooth contour
         smooth_contour(device, &dst, smoothing)?;
+
+        ite += 1;
     }
 
     Ok(dst)

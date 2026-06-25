@@ -7,13 +7,21 @@ pub fn standard_deviation(
     device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    rx: f32,
-    ry: f32,
-    rz: f32,
+    radius_x: f32,
+    radius_y: f32,
+    radius_z: f32,
     connectivity: &str,
 ) -> Result<ArrayPtr> {
-    let var = tier1::variance_filter(device, src, None, rx, ry, rz, connectivity)?;
-    tier1::power(device, &var, dst, 0.5)
+    let temp = tier1::variance_filter(
+        device,
+        src,
+        None,
+        radius_x,
+        radius_y,
+        radius_z,
+        connectivity,
+    )?;
+    tier1::power(device, &temp, dst, 0.5)
 }
 
 /// Standard deviation filter with box connectivity.
@@ -21,11 +29,11 @@ pub fn standard_deviation_box(
     device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    rx: f32,
-    ry: f32,
-    rz: f32,
+    radius_x: f32,
+    radius_y: f32,
+    radius_z: f32,
 ) -> Result<ArrayPtr> {
-    standard_deviation(device, src, dst, rx, ry, rz, "box")
+    standard_deviation(device, src, dst, radius_x, radius_y, radius_z, "box")
 }
 
 /// Standard deviation filter with sphere connectivity.
@@ -33,9 +41,9 @@ pub fn standard_deviation_sphere(
     device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    rx: f32,
-    ry: f32,
-    rz: f32,
+    radius_x: f32,
+    radius_y: f32,
+    radius_z: f32,
 ) -> Result<ArrayPtr> {
-    standard_deviation(device, src, dst, rx, ry, rz, "sphere")
+    standard_deviation(device, src, dst, radius_x, radius_y, radius_z, "sphere")
 }

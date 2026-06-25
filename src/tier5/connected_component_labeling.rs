@@ -1,4 +1,4 @@
-use crate::array::{pull, Array, ArrayPtr};
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
@@ -17,35 +17,34 @@ pub fn connected_component_labeling(
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, LABEL, device)?;
     let temp1 = tier1::set_nonzero_pixels_to_pixelindex(device, src, None, 1)?;
-    let temp2 = Array::create_like(&temp1, device)?;
+    let temp2 = tier0::create_like(&temp1, None, DType::Unknown, device)?;
     temp2.lock().unwrap().fill(0.0)?;
 
     let flag = Array::create(1, 1, 1, 1, DType::Int32, MType::Buffer, device)?;
     flag.lock().unwrap().fill(0.0)?;
 
     let mut flag_value = 1_i32;
-    let mut iteration_count = 0;
+    let mut iter_count = 0;
     while flag_value > 0 {
-        if iteration_count % 2 == 0 {
-            tier1::nonzero_minimum(device, &temp1, &flag, Some(temp2.clone()), connectivity)?;
-        } else {
-            tier1::nonzero_minimum(device, &temp2, &flag, Some(temp1.clone()), connectivity)?;
-        }
+        let active = if iter_count % 2 == 0 { &temp1 } else { &temp2 };
+        let passive = if iter_count % 2 == 0 { &temp2 } else { &temp1 };
+        tier1::nonzero_minimum(device, active, &flag, Some(passive.clone()), connectivity)?;
 
-        let flag_host: Vec<i32> = pull(&flag)?;
-        flag_value = flag_host[0];
+        flag.lock()
+            .unwrap()
+            .read_to(std::slice::from_mut(&mut flag_value))?;
         if flag_value > 0 {
             flag.lock().unwrap().fill(0.0)?;
         }
-        iteration_count += 1;
+        iter_count += 1;
     }
 
-    let labeled = if iteration_count % 2 == 0 {
-        temp1
-    } else {
-        temp2
-    };
-    tier4::relabel_sequential(device, &labeled, Some(dst), 4096)
+    tier4::relabel_sequential(
+        device,
+        if iter_count % 2 == 0 { &temp1 } else { &temp2 },
+        Some(dst),
+        4096,
+    )
 }
 
 /// Deprecated alias for [`connected_component_labeling`].

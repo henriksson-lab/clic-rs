@@ -9,21 +9,29 @@ use crate::types::DType;
 ///
 /// Mirrors CLIc's `hessian_eigenvalues_func`. For 2D inputs this returns
 /// `[large, small]`; for 3D inputs this returns `[large, middle, small]`.
-pub fn hessian_eigenvalues(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<ArrayPtr>> {
+pub fn hessian_eigenvalues(
+    device: &DeviceArc,
+    src: &ArrayPtr,
+    small_eigenvalue: Option<ArrayPtr>,
+    middle_eigenvalue: Option<ArrayPtr>,
+    large_eigenvalue: Option<ArrayPtr>,
+) -> Result<Vec<ArrayPtr>> {
+    // TODO: check when src is 1D
     let depth = {
         let l = src.lock().unwrap();
         l.depth()
     };
 
-    let small_eigenvalue = tier0::create_like(src, None, DType::Float, device)?;
-    let large_eigenvalue = tier0::create_like(src, None, DType::Float, device)?;
+    let small_eigenvalue = tier0::create_like(src, small_eigenvalue, DType::Float, device)?;
+    let large_eigenvalue = tier0::create_like(src, large_eigenvalue, DType::Float, device)?;
     let middle_eigenvalue = if depth > 1 {
-        tier0::create_like(src, None, DType::Float, device)?
+        tier0::create_like(src, middle_eigenvalue, DType::Float, device)?
     } else {
-        tier0::create_one_like(src, None, DType::Float, device)?
+        // no middle eigenvalue for 2D images, we replace the image by a scalar to save memory
+        tier0::create_one(src, middle_eigenvalue, DType::Float, device)?
     };
 
-    let global = {
+    let range = {
         let l = src.lock().unwrap();
         [l.width(), l.height(), l.depth()]
     };
@@ -49,7 +57,7 @@ pub fn hessian_eigenvalues(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<Arr
             include_str!("../../kernels/hessian_eigenvalues.cl"),
         ),
         &params,
-        global,
+        range,
         [0, 0, 0],
         &[],
     )?;

@@ -28,15 +28,8 @@ pub fn parametric_map(
     let vector = props.get(&property).ok_or_else(|| {
         CleError::Other(format!("Property '{}' not found in statistics", property))
     })?;
-    let values = Array::create_with_data(
-        vector.len(),
-        1,
-        1,
-        1,
-        MType::Buffer,
-        vector.as_slice(),
-        device,
-    )?;
+    let values = Array::create(vector.len(), 1, 1, 1, DType::Float, MType::Buffer, device)?;
+    values.lock().unwrap().write_from(vector.as_slice())?;
     tier1::set_column(device, &values, 0, 0.0)?;
     tier1::replace_values(device, labels, &values, Some(dst))
 }
@@ -192,7 +185,8 @@ fn apply_touching_neighbors_operation(
     let values = tier3::read_map_values(device, map, labels, None)?;
     let new_values = operation(device, &values, &touch_matrix, None)?;
     tier1::set_column(device, &new_values, 0, 0.0)?;
-    tier1::replace_intensities(device, labels, &new_values, Some(dst))
+    tier1::replace_intensities(device, labels, &new_values, Some(dst.clone()))?;
+    Ok(dst)
 }
 
 /// Mirrors CLIc's `mean_of_touching_neighbors_map_func`.

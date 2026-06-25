@@ -1,47 +1,56 @@
 //! Affine transform support.
-//!
-//! The `mat` buffer passed to the affine_transform kernel contains the flat
-//! row-major representation of the 3x4 inverse transform matrix, i.e.
-//! column-major of `(M^-1)^T` in the Eigen convention used by CLIc.
 
-use crate::array::{push, ArrayPtr};
+use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
-use crate::error::Result;
-use crate::execution::{execute, ParameterValue};
-use crate::tier0;
+use crate::error::{CleError, Result};
+use crate::transform::{apply_affine_transform, AffineTransform};
 
-const AFFINE_TRANSFORM_SRC: &str = include_str!("../../kernels/affine_transform.cl");
-
-/// Apply an affine transform to `src` using the given 4x4 inverse matrix.
-///
-/// `inv_mat_row_major` is 16 floats in row-major layout of `M^-1`. The kernel
-/// reads the first three rows.
+/// Apply an affine transform to `src` using a 3x3 or 4x4 row-major matrix.
 pub fn affine_transform(
-    device: &DeviceArc,
+    _device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    inv_mat_row_major: &[f32; 16],
+    transform_matrix: Option<&[f32]>,
+    interpolate: bool,
+    resize: bool,
 ) -> Result<ArrayPtr> {
-    let dst = tier0::create_like_same(src, dst, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
+    let transform_matrix = transform_matrix.unwrap_or(&[
+        1.0, 0.0, 0.0, 0.0, //
+        0.0, 1.0, 0.0, 0.0, //
+        0.0, 0.0, 1.0, 0.0, //
+        0.0, 0.0, 0.0, 1.0,
+    ]);
+    if transform_matrix.len() != 16 && transform_matrix.len() != 9 {
+        return Err(CleError::Other(
+            "Error: Transformation matrix size must be 9 or 16.".to_string(),
+        ));
+    }
+
+    let transform_matrix_arr = if transform_matrix.len() == 9 {
+        [
+            transform_matrix[0],
+            transform_matrix[1],
+            0.0,
+            transform_matrix[2],
+            transform_matrix[3],
+            transform_matrix[4],
+            0.0,
+            transform_matrix[5],
+            transform_matrix[6],
+            transform_matrix[7],
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+    } else {
+        let mut transform_matrix_arr = [0.0; 16];
+        transform_matrix_arr.copy_from_slice(transform_matrix);
+        transform_matrix_arr
     };
 
-    let mat = push::<f32>(inv_mat_row_major, 16, 1, 1, device)?;
-
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("mat", ParameterValue::Array(mat)),
-    ];
-    execute(
-        device,
-        ("affine_transform", AFFINE_TRANSFORM_SRC),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
-    Ok(dst)
+    let transform = AffineTransform::from_array(transform_matrix_arr);
+    apply_affine_transform(src, dst, &transform, interpolate, resize)
 }

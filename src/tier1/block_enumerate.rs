@@ -14,7 +14,7 @@ pub fn block_enumerate(
     blocksize: i32,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src0, dst, DType::Float, device)?;
-    let global = {
+    let range = {
         let src1 = src1.lock().unwrap();
         [src1.width(), src1.height(), src1.depth()]
     };
@@ -31,7 +31,7 @@ pub fn block_enumerate(
             include_str!("../../kernels/block_enumerate.cl"),
         ),
         &params,
-        global,
+        range,
         [0, 0, 0],
         &[],
     )?;

@@ -9,11 +9,11 @@ use crate::{tier1, tier2};
 /// `sum(position * intensity) / sum(intensity)` for each axis.
 pub fn center_of_mass(device: &DeviceArc, src: &ArrayPtr) -> Result<Vec<f32>> {
     let sum = tier2::sum_of_all_pixels(device, src)?;
-    let temp_x = tier1::multiply_image_and_position(device, src, None, 0)?;
-    let sum_x = tier2::sum_of_all_pixels(device, &temp_x)?;
-    let temp_y = tier1::multiply_image_and_position(device, src, None, 1)?;
-    let sum_y = tier2::sum_of_all_pixels(device, &temp_y)?;
-    let temp_z = tier1::multiply_image_and_position(device, src, None, 2)?;
-    let sum_z = tier2::sum_of_all_pixels(device, &temp_z)?;
+    let mut temp = tier1::multiply_image_and_position(device, src, None, 0)?;
+    let sum_x = tier2::sum_of_all_pixels(device, &temp)?;
+    temp = tier1::multiply_image_and_position(device, src, None, 1)?;
+    let sum_y = tier2::sum_of_all_pixels(device, &temp)?;
+    temp = tier1::multiply_image_and_position(device, src, None, 2)?;
+    let sum_z = tier2::sum_of_all_pixels(device, &temp)?;
     Ok(vec![sum_x / sum, sum_y / sum, sum_z / sum])
 }

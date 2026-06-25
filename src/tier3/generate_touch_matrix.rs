@@ -14,11 +14,17 @@ pub fn generate_touch_matrix(
     src: &ArrayPtr,
     dst_matrix: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
-    let max_label = tier2::maximum_of_all_pixels(device, src)? as usize + 1;
-    let dst_matrix = tier0::create_dst(src, dst_matrix, max_label, max_label, 1, INDEX, device)?;
+    let mut dst_matrix = dst_matrix;
+    if dst_matrix.is_none() {
+        let max_label = tier2::maximum_of_all_pixels(device, src)? as usize + 1;
+        dst_matrix = Some(tier0::create_dst(
+            src, dst_matrix, max_label, max_label, 1, INDEX, device,
+        )?);
+    }
+    let dst_matrix = dst_matrix.unwrap();
     dst_matrix.lock().unwrap().fill(0.0)?;
 
-    let global = {
+    let range = {
         let lock = src.lock().unwrap();
         [lock.width(), lock.height(), lock.depth()]
     };
@@ -33,7 +39,7 @@ pub fn generate_touch_matrix(
             include_str!("../../kernels/generate_touch_matrix.cl"),
         ),
         &params,
-        global,
+        range,
         [0, 0, 0],
         &[],
     )?;

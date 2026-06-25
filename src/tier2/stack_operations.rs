@@ -1,9 +1,8 @@
-use crate::array::ArrayPtr;
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
 use crate::tier1;
-use crate::types::DType;
 
 /// Crop a volume into a new volume along the z axis.
 ///
@@ -15,13 +14,9 @@ pub fn sub_stack(
     start_z: i32,
     end_z: i32,
 ) -> Result<ArrayPtr> {
-    let (width, height) = {
-        let src = src.lock().unwrap();
-        (src.width(), src.height())
-    };
     let nb_slice = (end_z - start_z + 1).max(1) as usize;
 
-    tier1::crop(device, src, dst, 0, 0, start_z, width, height, nb_slice)
+    tier1::crop(device, src, dst, 0, 0, start_z, 0, 0, nb_slice)
 }
 
 /// Reduce the number of z slices by keeping every `reduction_factor`-th slice.
@@ -35,14 +30,17 @@ pub fn reduce_stack(
     offset: i32,
 ) -> Result<ArrayPtr> {
     let reduction_factor = reduction_factor.max(1);
-    let (width, height, depth) = {
+    let (width, height, depth, dtype) = {
         let src = src.lock().unwrap();
-        (src.width(), src.height(), src.depth())
+        (src.width(), src.height(), src.depth(), src.dtype)
     };
     let num_slice = depth / reduction_factor as usize;
 
-    let dst = tier0::create_dst(src, dst, width, height, num_slice, DType::Unknown, device)?;
-    let temp_slice = tier0::create_dst(src, None, width, height, 1, DType::Unknown, device)?;
+    let dst = tier0::create_dst(src, dst, width, height, num_slice, dtype, device)?;
+    let temp_slice = {
+        let src = src.lock().unwrap();
+        Array::create(width, height, 1, 2, src.dtype, src.mtype, device)?
+    };
 
     for z in 0..num_slice {
         let src_z = z as i32 * reduction_factor + offset;

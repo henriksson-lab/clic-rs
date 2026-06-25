@@ -1,10 +1,9 @@
-use crate::array::ArrayPtr;
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
-use crate::tier0;
 use crate::tier1;
 use crate::tier3;
-use crate::types::LABEL;
+use crate::types::{MType, LABEL};
 
 /// Remove labels whose associated map values are outside `[min_value, max_value]`.
 pub fn remove_labels_with_map_values_out_of_range(
@@ -17,7 +16,15 @@ pub fn remove_labels_with_map_values_out_of_range(
 ) -> Result<ArrayPtr> {
     let above = tier1::greater_constant(device, values, None, max_value)?;
     let below = tier1::smaller_constant(device, values, None, min_value)?;
-    let flaglist = tier0::create_vector(values.lock().unwrap().size(), LABEL, device)?;
+    let flaglist = Array::create(
+        values.lock().unwrap().size(),
+        1,
+        1,
+        1,
+        LABEL,
+        MType::Buffer,
+        device,
+    )?;
     tier1::binary_or(device, &below, &above, Some(flaglist.clone()))?;
     tier3::remove_labels(device, src, &flaglist, dst)
 }
@@ -33,7 +40,15 @@ pub fn remove_labels_with_map_values_within_range(
 ) -> Result<ArrayPtr> {
     let above = tier1::greater_or_equal_constant(device, values, None, min_value)?;
     let below = tier1::smaller_or_equal_constant(device, values, None, max_value)?;
-    let flaglist = tier0::create_vector(values.lock().unwrap().size(), LABEL, device)?;
+    let flaglist = Array::create(
+        values.lock().unwrap().size(),
+        1,
+        1,
+        1,
+        LABEL,
+        MType::Buffer,
+        device,
+    )?;
     tier1::binary_and(device, &below, &above, Some(flaglist.clone()))?;
     tier3::remove_labels(device, src, &flaglist, dst)
 }

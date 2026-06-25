@@ -15,12 +15,24 @@ pub fn generate_binary_overlap_matrix(
     src1: &ArrayPtr,
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
-    let max_label_0 = tier2::maximum_of_all_pixels(device, src0)? as usize + 1;
-    let max_label_1 = tier2::maximum_of_all_pixels(device, src1)? as usize + 1;
-    let dst = tier0::create_dst(src0, dst, max_label_0, max_label_1, 1, INDEX, device)?;
+    let mut dst = dst;
+    if dst.is_none() {
+        let max_label_0 = tier2::maximum_of_all_pixels(device, src0)? as usize + 1;
+        let max_label_1 = tier2::maximum_of_all_pixels(device, src1)? as usize + 1;
+        dst = Some(tier0::create_dst(
+            src0,
+            dst,
+            max_label_0,
+            max_label_1,
+            1,
+            INDEX,
+            device,
+        )?);
+    }
+    let dst = dst.unwrap();
     dst.lock().unwrap().fill(0.0)?;
 
-    let global = {
+    let range = {
         let lock = src0.lock().unwrap();
         [lock.width(), lock.height(), lock.depth()]
     };
@@ -36,7 +48,7 @@ pub fn generate_binary_overlap_matrix(
             include_str!("../../kernels/generate_binary_overlap_matrix.cl"),
         ),
         &params,
-        global,
+        range,
         [0, 0, 0],
         &[],
     )?;

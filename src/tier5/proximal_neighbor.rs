@@ -1,7 +1,8 @@
 use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
-use crate::{tier1, tier2, tier4};
+use crate::types::DType;
+use crate::{tier0, tier1, tier2, tier4};
 
 /// Count labels whose centroids are within a distance range of each other.
 ///
@@ -12,11 +13,13 @@ pub fn proximal_neighbor_count(
     device: &DeviceArc,
     src: &ArrayPtr,
     dst: Option<ArrayPtr>,
-    min_distance: f32,
-    max_distance: f32,
+    mut min_distance: f32,
+    mut max_distance: f32,
 ) -> Result<ArrayPtr> {
-    let min_distance = min_distance.max(0.0);
-    let max_distance = if max_distance < 0.0 {
+    let dst = tier0::create_like(src, dst, DType::Uint32, device)?;
+
+    min_distance = min_distance.max(0.0);
+    max_distance = if max_distance < 0.0 {
         f32::MAX
     } else {
         max_distance
@@ -32,7 +35,7 @@ pub fn proximal_neighbor_count(
         max_distance,
     )?;
 
-    let dst = tier2::count_touching_neighbors(device, &touch_matrix, dst, false)?;
+    tier2::count_touching_neighbors(device, &touch_matrix, Some(dst.clone()), false)?;
     tier1::set_column(device, &dst, 0, 0.0)?;
 
     Ok(dst)

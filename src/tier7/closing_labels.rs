@@ -4,7 +4,7 @@ use crate::error::Result;
 use crate::tier0;
 use crate::tier1;
 use crate::tier6;
-use crate::types::LABEL;
+use crate::types::{DType, LABEL};
 
 /// Apply morphological closing to a label image.
 ///
@@ -22,18 +22,18 @@ pub fn closing_labels(
 
     let temp = tier6::dilate_labels(device, src, None, radius)?;
     let flip = tier1::greater_constant(device, &temp, None, 0.0)?;
-    let flop = tier0::create_like_same(&flip, None, device)?;
+    let flop = tier0::create_like(&flip, None, DType::Unknown, device)?;
 
     for i in 0..radius {
-        let (active, passive, connectivity) = if i % 2 == 0 {
-            (&flip, &flop, "sphere")
+        let (active, connectivity) = if i % 2 == 0 {
+            (&flip, "sphere")
         } else {
-            (&flop, &flip, "box")
+            (&flop, "box")
         };
         tier1::binary_erode(
             device,
             active,
-            Some(passive.clone()),
+            Some(flop.clone()),
             1.0,
             1.0,
             1.0,

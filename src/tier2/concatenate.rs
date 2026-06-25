@@ -3,7 +3,6 @@ use crate::device::DeviceArc;
 use crate::error::{CleError, Result};
 use crate::tier0;
 use crate::tier1;
-use crate::types::DType;
 
 /// Concatenate two arrays along an axis (0: x, 1: y, 2: z).
 ///
@@ -16,61 +15,82 @@ pub fn concatenate(
     dst: Option<ArrayPtr>,
     axis: i32,
 ) -> Result<ArrayPtr> {
-    let (src0_width, src0_height, src0_depth) = {
-        let s0 = src0.lock().unwrap();
-        (s0.width(), s0.height(), s0.depth())
-    };
-    let (src1_width, src1_height, src1_depth) = {
-        let s1 = src1.lock().unwrap();
-        (s1.width(), s1.height(), s1.depth())
-    };
-
-    let (dst_width, dst_height, dst_depth, src1_x, src1_y, src1_z) = match axis {
-        0 => (
-            src0_width + src1_width,
-            src0_height,
-            src0_depth,
-            src0_width as i32,
-            0,
-            0,
-        ),
-        1 => (
-            src0_width,
-            src0_height + src1_height,
-            src0_depth,
-            0,
-            src0_height as i32,
-            0,
-        ),
-        2 => (
-            src0_width,
-            src0_height,
-            src0_depth + src1_depth,
-            0,
-            0,
-            src0_depth as i32,
-        ),
+    let mut dst = dst;
+    match axis {
+        0 => {
+            let (src0_width, src0_height, src0_depth, src0_dtype) = {
+                let src0 = src0.lock().unwrap();
+                (src0.width(), src0.height(), src0.depth(), src0.dtype)
+            };
+            let src1_width = src1.lock().unwrap().width();
+            dst = Some(tier0::create_dst(
+                src0,
+                dst,
+                src0_width + src1_width,
+                src0_height,
+                src0_depth,
+                src0_dtype,
+                device,
+            )?);
+            let dst_ref = dst.as_ref().unwrap();
+            dst_ref.lock().unwrap().fill(0.0)?;
+            tier1::paste(device, src0, Some(dst_ref.clone()), 0, 0, 0)?;
+            tier1::paste(device, src1, Some(dst_ref.clone()), src0_width as i32, 0, 0)?;
+        }
+        1 => {
+            let (src0_width, src0_height, src0_depth, src0_dtype) = {
+                let src0 = src0.lock().unwrap();
+                (src0.width(), src0.height(), src0.depth(), src0.dtype)
+            };
+            let src1_height = src1.lock().unwrap().height();
+            dst = Some(tier0::create_dst(
+                src0,
+                dst,
+                src0_width,
+                src0_height + src1_height,
+                src0_depth,
+                src0_dtype,
+                device,
+            )?);
+            let dst_ref = dst.as_ref().unwrap();
+            dst_ref.lock().unwrap().fill(0.0)?;
+            tier1::paste(device, src0, Some(dst_ref.clone()), 0, 0, 0)?;
+            tier1::paste(
+                device,
+                src1,
+                Some(dst_ref.clone()),
+                0,
+                src0_height as i32,
+                0,
+            )?;
+        }
+        2 => {
+            let (src0_width, src0_height, src0_depth, src0_dtype) = {
+                let src0 = src0.lock().unwrap();
+                (src0.width(), src0.height(), src0.depth(), src0.dtype)
+            };
+            let src1_depth = src1.lock().unwrap().depth();
+            dst = Some(tier0::create_dst(
+                src0,
+                dst,
+                src0_width,
+                src0_height,
+                src0_depth + src1_depth,
+                src0_dtype,
+                device,
+            )?);
+            let dst_ref = dst.as_ref().unwrap();
+            dst_ref.lock().unwrap().fill(0.0)?;
+            tier1::paste(device, src0, Some(dst_ref.clone()), 0, 0, 0)?;
+            tier1::paste(device, src1, Some(dst_ref.clone()), 0, 0, src0_depth as i32)?;
+        }
         _ => {
             return Err(CleError::Other(
                 "concatenate: axis must be 0, 1 or 2".into(),
             ));
         }
     };
-
-    let dst = tier0::create_dst(
-        src0,
-        dst,
-        dst_width,
-        dst_height,
-        dst_depth,
-        DType::Unknown,
-        device,
-    )?;
-    dst.lock().unwrap().fill(0.0)?;
-
-    tier1::paste(device, src0, Some(dst.clone()), 0, 0, 0)?;
-    tier1::paste(device, src1, Some(dst.clone()), src1_x, src1_y, src1_z)?;
-    Ok(dst)
+    Ok(dst.unwrap())
 }
 
 /// Concatenate two images or stacks along the x axis.

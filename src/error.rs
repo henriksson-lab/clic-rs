@@ -1,5 +1,3 @@
-use opencl3::error_codes::ClError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum CleError {
     #[error("OpenCL error: {0}")]
@@ -23,9 +21,3 @@ pub enum CleError {
 }
 
 pub type Result<T> = std::result::Result<T, CleError>;
-
-impl From<ClError> for CleError {
-    fn from(e: ClError) -> Self {
-        CleError::OpenCL(format!("{:?}", e))
-    }
-}

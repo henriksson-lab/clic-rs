@@ -3,12 +3,13 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use clic_rs::{BackendManager, array::{push, pull}, tier1};
+//! use clic_rs::{BackendManager, array::Array, tier1};
 //!
-//! let device = BackendManager::get().get_device("", "gpu").unwrap();
-//! let src = push(&vec![1.0f32; 100], 10, 10, 1, &device).unwrap();
+//! let device = BackendManager::get_instance().get_device("", "gpu").unwrap();
+//! let src = clic_rs::array::Array::create_with_data(10, 10, 1, clic_rs::utils::shape_to_dimension(10, 10, 1), clic_rs::types::MType::Buffer, &vec![1.0f32; 100], &device).unwrap();
 //! let dst = tier1::gaussian_blur(&device, &src, None, 1.0, 1.0, 0.0).unwrap();
-//! let result: Vec<f32> = pull::<f32>(&dst).unwrap();
+//! let mut result = vec![0.0_f32; dst.lock().unwrap().size()];
+//! dst.lock().unwrap().read_to(&mut result).unwrap();
 //! ```
 
 pub mod array;
@@ -31,6 +32,7 @@ pub mod tier6;
 pub mod tier7;
 pub mod tier8;
 pub mod transform;
+pub mod translator;
 pub mod types;
 pub mod utils;
 

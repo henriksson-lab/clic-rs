@@ -23,29 +23,26 @@ pub fn mode(
     }
 
     let dst = tier0::create_like(src, dst, DType::Uint8, device)?;
-    let r = [
-        crate::utils::radius2kernelsize(radius_x),
-        crate::utils::radius2kernelsize(radius_y),
-        crate::utils::radius2kernelsize(radius_z),
-    ];
-    let global = {
-        let dst = dst.lock().unwrap();
-        [dst.width(), dst.height(), dst.depth()]
-    };
+    let r_x = crate::utils::radius2kernelsize(radius_x);
+    let r_y = crate::utils::radius2kernelsize(radius_y);
+    let r_z = crate::utils::radius2kernelsize(radius_z);
+    let mut kernel = ("mode_box", include_str!("../../kernels/mode_box.cl"));
+    if connectivity == "sphere" {
+        kernel = ("mode_sphere", include_str!("../../kernels/mode_sphere.cl"));
+    }
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("scalar0", ParameterValue::Int(r[0])),
-        ("scalar1", ParameterValue::Int(r[1])),
-        ("scalar2", ParameterValue::Int(r[2])),
+        ("scalar0", ParameterValue::Int(r_x)),
+        ("scalar1", ParameterValue::Int(r_y)),
+        ("scalar2", ParameterValue::Int(r_z)),
     ];
-    let kernel = if connectivity == "sphere" {
-        ("mode_sphere", include_str!("../../kernels/mode_sphere.cl"))
-    } else {
-        ("mode_box", include_str!("../../kernels/mode_box.cl"))
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
     };
 
-    execute(device, kernel, &params, global, [0, 0, 0], &[])?;
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }
 

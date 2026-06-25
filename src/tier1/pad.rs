@@ -1,7 +1,6 @@
 use crate::array::ArrayPtr;
 use crate::device::DeviceArc;
 use crate::error::Result;
-use crate::execution::{execute, ParameterValue};
 use crate::tier0;
 use crate::types::DType;
 
@@ -20,29 +19,32 @@ pub fn pad(
     center: bool,
 ) -> Result<ArrayPtr> {
     let (src_width, src_height, src_depth) = {
-        let s = src.lock().unwrap();
-        (s.width(), s.height(), s.depth())
+        let src = src.lock().unwrap();
+        (src.width(), src.height(), src.depth())
     };
     let dst = tier0::create_dst(src, dst, size_x, size_y, size_z, DType::Unknown, device)?;
     dst.lock().unwrap().fill(value)?;
+    let (dst_width, dst_height, dst_depth) = {
+        let dst = dst.lock().unwrap();
+        (dst.width(), dst.height(), dst.depth())
+    };
 
-    let (offset_x, offset_y, offset_z) = pad_offset(
-        src_width, src_height, src_depth, size_x, size_y, size_z, center,
-    );
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("scalar0", ParameterValue::Int(offset_x)),
-        ("scalar1", ParameterValue::Int(offset_y)),
-        ("scalar2", ParameterValue::Int(offset_z)),
-    ];
-    execute(
-        device,
-        ("paste", include_str!("../../kernels/paste.cl")),
-        &params,
+    let pad_x = src_width.abs_diff(size_x);
+    let pad_y = src_height.abs_diff(size_y);
+    let pad_z = src_depth.abs_diff(size_z);
+    let mut offset = [0, 0, 0];
+    if center {
+        offset = [
+            if dst_width > 1 { pad_x.div_ceil(2) } else { 0 },
+            if dst_height > 1 { pad_y.div_ceil(2) } else { 0 },
+            if dst_depth > 1 { pad_z.div_ceil(2) } else { 0 },
+        ];
+    }
+    src.lock().unwrap().copy_to_region(
+        &dst,
         [src_width, src_height, src_depth],
         [0, 0, 0],
-        &[],
+        offset,
     )?;
     Ok(dst)
 }
@@ -58,60 +60,31 @@ pub fn unpad(
     center: bool,
 ) -> Result<ArrayPtr> {
     let (src_width, src_height, src_depth) = {
-        let s = src.lock().unwrap();
-        (s.width(), s.height(), s.depth())
+        let src = src.lock().unwrap();
+        (src.width(), src.height(), src.depth())
     };
     let dst = tier0::create_dst(src, dst, size_x, size_y, size_z, DType::Unknown, device)?;
-
-    let (offset_x, offset_y, offset_z) = pad_offset(
-        src_width, src_height, src_depth, size_x, size_y, size_z, center,
-    );
-    let global = {
-        let d = dst.lock().unwrap();
-        [d.width(), d.height(), d.depth()]
+    let (dst_width, dst_height, dst_depth) = {
+        let dst = dst.lock().unwrap();
+        (dst.width(), dst.height(), dst.depth())
     };
-    let params = vec![
-        ("src", ParameterValue::Array(src.clone())),
-        ("dst", ParameterValue::Array(dst.clone())),
-        ("index0", ParameterValue::Int(offset_x)),
-        ("index1", ParameterValue::Int(offset_y)),
-        ("index2", ParameterValue::Int(offset_z)),
-    ];
-    execute(
-        device,
-        ("crop", include_str!("../../kernels/crop.cl")),
-        &params,
-        global,
+
+    let pad_x = src_width.abs_diff(size_x);
+    let pad_y = src_height.abs_diff(size_y);
+    let pad_z = src_depth.abs_diff(size_z);
+    let mut offset = [0, 0, 0];
+    if center {
+        offset = [
+            if dst_width > 1 { pad_x.div_ceil(2) } else { 0 },
+            if dst_height > 1 { pad_y.div_ceil(2) } else { 0 },
+            if dst_depth > 1 { pad_z.div_ceil(2) } else { 0 },
+        ];
+    }
+    src.lock().unwrap().copy_to_region(
+        &dst,
+        [dst_width, dst_height, dst_depth],
+        offset,
         [0, 0, 0],
-        &[],
     )?;
     Ok(dst)
-}
-
-fn pad_offset(
-    src_width: usize,
-    src_height: usize,
-    src_depth: usize,
-    dst_width: usize,
-    dst_height: usize,
-    dst_depth: usize,
-    center: bool,
-) -> (i32, i32, i32) {
-    if !center {
-        return (0, 0, 0);
-    }
-
-    (
-        centered_offset(src_width, dst_width),
-        centered_offset(src_height, dst_height),
-        centered_offset(src_depth, dst_depth),
-    )
-}
-
-fn centered_offset(src: usize, dst: usize) -> i32 {
-    if dst > 1 {
-        src.abs_diff(dst).div_ceil(2) as i32
-    } else {
-        0
-    }
 }

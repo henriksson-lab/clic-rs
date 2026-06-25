@@ -19,26 +19,20 @@ pub fn minimum_of_masked_pixels_reduction(
 ) -> Result<ArrayPtr> {
     let reduced_src = tier0::create_xy(src, reduced_src, DType::Unknown, device)?;
     let reduced_mask = tier0::create_xy(mask, reduced_mask, DType::Unknown, device)?;
-    let global = {
-        let l = reduced_src.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let kernel = (
+        "minimum_of_masked_pixels_reduction",
+        include_str!("../../kernels/minimum_of_masked_pixels_reduction.cl"),
+    );
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("mask", ParameterValue::Array(mask.clone())),
         ("dst_src", ParameterValue::Array(reduced_src.clone())),
         ("dst_mask", ParameterValue::Array(reduced_mask)),
     ];
-    execute(
-        device,
-        (
-            "minimum_of_masked_pixels_reduction",
-            include_str!("../../kernels/minimum_of_masked_pixels_reduction.cl"),
-        ),
-        &params,
-        global,
-        [0, 0, 0],
-        &[],
-    )?;
+    let range = {
+        let l = reduced_src.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
+    };
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(reduced_src)
 }

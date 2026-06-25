@@ -1,4 +1,4 @@
-use crate::array::{pull, Array, ArrayPtr};
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::Result;
 use crate::tier0;
@@ -21,34 +21,35 @@ pub fn dilate_labels(
     }
 
     let flip = tier1::copy(device, src, None)?;
-    let flop = Array::create_like(&flip, device)?;
-    let flag = Array::create(1, 1, 1, 1, DType::Int32, MType::Buffer, device)?;
+    let flop = Array::create_from_array(&flip)?;
+    let flag = Array::create(1, 1, 1, 1, DType::Float, MType::Buffer, device)?;
     flag.lock().unwrap().fill(0.0)?;
 
     let mut iter_count = 0;
-    let mut flag_value = 1_i32;
-    while flag_value > 0 && iter_count < radius {
-        let (active, passive, connectivity) = if iter_count % 2 == 0 {
-            (&flip, &flop, "box")
-        } else {
-            (&flop, &flip, "sphere")
-        };
+    let mut flag_value = 1.0_f32;
+    while flag_value > 0.0 && iter_count < radius {
+        let active = if iter_count % 2 == 0 { &flip } else { &flop };
+        let passive = if iter_count % 2 == 0 { &flop } else { &flip };
         tier1::onlyzero_overwrite_maximum(
             device,
             active,
             &flag,
             Some(passive.clone()),
-            connectivity,
+            if iter_count % 2 == 0 { "box" } else { "sphere" },
         )?;
 
-        let flag_host: Vec<i32> = pull(&flag)?;
-        flag_value = flag_host[0];
-        if flag_value > 0 {
+        flag.lock()
+            .unwrap()
+            .read_to(std::slice::from_mut(&mut flag_value))?;
+        if flag_value > 0.0 {
             flag.lock().unwrap().fill(0.0)?;
         }
         iter_count += 1;
     }
 
-    let src = if iter_count % 2 == 0 { &flip } else { &flop };
-    tier1::copy(device, src, Some(dst))
+    tier1::copy(
+        device,
+        if iter_count % 2 == 0 { &flip } else { &flop },
+        Some(dst),
+    )
 }

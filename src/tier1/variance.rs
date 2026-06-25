@@ -16,34 +16,31 @@ pub fn variance_filter(
     connectivity: &str,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, DType::Float, device)?;
-    let r = [
-        crate::utils::radius2kernelsize(radius_x),
-        crate::utils::radius2kernelsize(radius_y),
-        crate::utils::radius2kernelsize(radius_z),
-    ];
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
-    };
+    let r_x = crate::utils::radius2kernelsize(radius_x);
+    let r_y = crate::utils::radius2kernelsize(radius_y);
+    let r_z = crate::utils::radius2kernelsize(radius_z);
+    let mut kernel = (
+        "variance_box",
+        include_str!("../../kernels/variance_box.cl"),
+    );
+    if connectivity == "sphere" {
+        kernel = (
+            "variance_sphere",
+            include_str!("../../kernels/variance_sphere.cl"),
+        );
+    }
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
         ("dst", ParameterValue::Array(dst.clone())),
-        ("scalar0", ParameterValue::Int(r[0])),
-        ("scalar1", ParameterValue::Int(r[1])),
-        ("scalar2", ParameterValue::Int(r[2])),
+        ("scalar0", ParameterValue::Int(r_x)),
+        ("scalar1", ParameterValue::Int(r_y)),
+        ("scalar2", ParameterValue::Int(r_z)),
     ];
-    let (kname, ksrc) = if connectivity == "sphere" {
-        (
-            "variance_sphere",
-            include_str!("../../kernels/variance_sphere.cl"),
-        )
-    } else {
-        (
-            "variance_box",
-            include_str!("../../kernels/variance_box.cl"),
-        )
+    let range = {
+        let l = dst.lock().unwrap();
+        [l.width(), l.height(), l.depth()]
     };
-    execute(device, (kname, ksrc), &params, global, [0, 0, 0], &[])?;
+    execute(device, kernel, &params, range, [0, 0, 0], &[])?;
     Ok(dst)
 }
 

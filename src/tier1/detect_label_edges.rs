@@ -14,9 +14,9 @@ pub fn detect_label_edges(
     dst: Option<ArrayPtr>,
 ) -> Result<ArrayPtr> {
     let dst = tier0::create_like(src, dst, BINARY, device)?;
-    let global = {
-        let l = dst.lock().unwrap();
-        [l.width(), l.height(), l.depth()]
+    let range = {
+        let dst = dst.lock().unwrap();
+        [dst.width(), dst.height(), dst.depth()]
     };
     let params = vec![
         ("src", ParameterValue::Array(src.clone())),
@@ -29,7 +29,7 @@ pub fn detect_label_edges(
             include_str!("../../kernels/detect_label_edges.cl"),
         ),
         &params,
-        global,
+        range,
         [0, 0, 0],
         &[],
     )?;

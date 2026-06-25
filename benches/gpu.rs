@@ -6,15 +6,11 @@
 // Each benchmark includes GPU execution + synchronization (device.finish()),
 // matching the measurement scope of the C++ benchmark in benchmark/clic_bench.cpp.
 
-use clic_rs::{
-    array::{pull, push},
-    backend_manager::BackendManager,
-    tier1, tier3,
-};
+use clic_rs::{array::Array, backend_manager::BackendManager, tier1, tier3, types::MType};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 fn device() -> clic_rs::DeviceArc {
-    BackendManager::get()
+    BackendManager::get_instance()
         .get_device("", "all")
         .expect("No OpenCL device found")
 }
@@ -28,7 +24,16 @@ fn bench_gaussian_blur(c: &mut Criterion) {
     for &side in &[64usize, 256, 512] {
         let n = side * side;
         let data = vec![1.0f32; n];
-        let src = push(&data, side, side, 1, &dev).unwrap();
+        let src = Array::create_with_data(
+            side,
+            side,
+            1,
+            clic_rs::utils::shape_to_dimension(side, side, 1),
+            MType::Buffer,
+            &data,
+            &dev,
+        )
+        .unwrap();
 
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(
@@ -54,8 +59,26 @@ fn bench_add_images_weighted(c: &mut Criterion) {
     for &side in &[64usize, 256, 512] {
         let n = side * side;
         let data = vec![1.0f32; n];
-        let src0 = push(&data, side, side, 1, &dev).unwrap();
-        let src1 = push(&data, side, side, 1, &dev).unwrap();
+        let src0 = Array::create_with_data(
+            side,
+            side,
+            1,
+            clic_rs::utils::shape_to_dimension(side, side, 1),
+            MType::Buffer,
+            &data,
+            &dev,
+        )
+        .unwrap();
+        let src1 = Array::create_with_data(
+            side,
+            side,
+            1,
+            clic_rs::utils::shape_to_dimension(side, side, 1),
+            MType::Buffer,
+            &data,
+            &dev,
+        )
+        .unwrap();
 
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(
@@ -82,7 +105,16 @@ fn bench_mean_of_all_pixels(c: &mut Criterion) {
     for &side in &[64usize, 256, 512] {
         let n = side * side;
         let data = vec![1.0f32; n];
-        let src = push(&data, side, side, 1, &dev).unwrap();
+        let src = Array::create_with_data(
+            side,
+            side,
+            1,
+            clic_rs::utils::shape_to_dimension(side, side, 1),
+            MType::Buffer,
+            &data,
+            &dev,
+        )
+        .unwrap();
 
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(
@@ -98,11 +130,11 @@ fn bench_mean_of_all_pixels(c: &mut Criterion) {
     group.finish();
 }
 
-// ── push + pull (host↔GPU transfer) ──────────────────────────────────────────
+// ── host/device transfer ─────────────────────────────────────────────────────
 
-fn bench_push_pull(c: &mut Criterion) {
+fn bench_host_device_transfer(c: &mut Criterion) {
     let dev = device();
-    let mut group = c.benchmark_group("push_pull");
+    let mut group = c.benchmark_group("host_device_transfer");
 
     for &side in &[64usize, 256, 512] {
         let n = side * side;
@@ -114,8 +146,18 @@ fn bench_push_pull(c: &mut Criterion) {
             &side,
             |b, _| {
                 b.iter(|| {
-                    let arr = push(&data, side, side, 1, &dev).unwrap();
-                    let _out: Vec<f32> = pull(&arr).unwrap();
+                    let arr = Array::create_with_data(
+                        side,
+                        side,
+                        1,
+                        clic_rs::utils::shape_to_dimension(side, side, 1),
+                        MType::Buffer,
+                        &data,
+                        &dev,
+                    )
+                    .unwrap();
+                    let mut out = vec![0.0_f32; arr.lock().unwrap().size()];
+                    arr.lock().unwrap().read_to(&mut out).unwrap();
                 });
             },
         );
@@ -128,6 +170,6 @@ criterion_group!(
     bench_gaussian_blur,
     bench_add_images_weighted,
     bench_mean_of_all_pixels,
-    bench_push_pull,
+    bench_host_device_transfer,
 );
 criterion_main!(benches);

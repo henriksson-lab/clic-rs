@@ -1,9 +1,9 @@
-use crate::array::{pull, push, ArrayPtr};
+use crate::array::{Array, ArrayPtr};
 use crate::device::DeviceArc;
 use crate::error::{CleError, Result};
 use crate::tier0;
 use crate::tier1;
-use crate::types::{DType, LABEL};
+use crate::types::{DType, MType, LABEL};
 
 /// Remove labels from a label map and renumber the remaining labels.
 ///
@@ -27,7 +27,8 @@ pub fn remove_labels(
         list.size()
     };
 
-    let mut labels_list: Vec<u32> = pull(list)?;
+    let mut labels_list = vec![0_u32; list_size];
+    list.lock().unwrap().read_to(&mut labels_list)?;
     labels_list[0] = 0;
     let mut count = 1;
     for label in labels_list.iter_mut().take(list_size).skip(1) {
@@ -39,7 +40,8 @@ pub fn remove_labels(
         }
     }
 
-    let index_list = push(&labels_list, list_size, 1, 1, device)?;
+    let index_list =
+        Array::create_with_data(list_size, 1, 1, 1, MType::Buffer, &labels_list, device)?;
     tier1::replace_values(device, src, &index_list, Some(dst.clone()))?;
     Ok(dst)
 }
