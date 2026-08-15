@@ -66,6 +66,21 @@ dst.lock().unwrap().read_to(&mut result).unwrap();
 
 ## Benchmarks
 
+Original benchmark baseline: the local `CLIc/` source tree is commit
+`ea5ccd2803f2` (`git describe`: `0.21.1-5-gea5ccd28`).
+
+Latest rustification roll-up rerun: 2026-07-14 at Rust repo commit
+`f07204e42e16b34a080f29f0fc7b8bd1d3835a57`. On Linux/OpenCL, the C++
+CLIc library was configured in `/tmp/clic_build` with explicit
+`OpenCL_LIBRARIES=/usr/lib/x86_64-linux-gnu/libOpenCL.so.1` and
+`OpenCL_INCLUDE_DIRS=/usr/include`; the benchmark binary required
+`LIBRARY_PATH`/`LD_LIBRARY_PATH` to include
+`/usr/local/cuda-12/targets/x86_64-linux/lib`. `benchmark/update_function_table.sh
+/tmp/clic_build` produced 12 paired C++/Rust function-size rows, all status
+`ok`. The roll-up in `pres_rustification/benchmarks/clic-rs.tsv` reports mean
+C++/Rust speedup 0.94x and mean Rust/C++ RSS ratio 1.61. The table below is an
+older Apple Silicon snapshot and is kept as machine-specific context.
+
 Measured on Apple Silicon (Intel GPU, macOS 15.7, OpenCL). Both implementations synchronize the GPU after each operation (`clFinish`). clic-rs benefits from an in-memory LRU kernel program cache, avoiding recompilation on repeated calls.
 
 | Operation | Image size | CLIc (C++) | clic-rs (Rust) |
@@ -107,10 +122,17 @@ BSD 3-Clause License. See [LICENSE](LICENSE) for details.
 
 ## Citing and acknowledgements
 
-**CLIc in turn is built in top of CLIJ, which asks for the following citation:**
+CLIc in turn is built in top of CLIJ, which asks for the following citation:
 
-Robert Haase, Loic Alain Royer, Peter Steinbach, Deborah Schmidt, Alexandr Dibrov, Uwe Schmidt, Martin Weigert, Nicola Maghelli, Pavel Tomancak, Florian Jug, Eugene W Myers. CLIJ: GPU-accelerated image processing for everyone. Nat Methods 17, 5-6 (2020) doi:10.1038/s41592-019-0650-1
+> Robert Haase, Loic Alain Royer, Peter Steinbach, Deborah Schmidt, Alexandr Dibrov, Uwe Schmidt, Martin Weigert, Nicola Maghelli, Pavel Tomancak, Florian Jug, Eugene W Myers. CLIJ: GPU-accelerated image processing for everyone. Nat Methods 17, 5-6 (2020) doi:10.1038/s41592-019-0650-1
 
-**CLIc has the following acknowledgement:**
+CLIc has the following acknowledgement:
 
-We acknowledge support by the Deutsche Forschungsgemeinschaft under Germany’s Excellence Strategy (EXC2068) Cluster of Excellence Physics of Life of TU Dresden and by the Institut Pasteur, Paris. This project has been made possible in part by grant number 2021-237734 ([GPU-accelerating Fiji and friends using distributed CLIJ, NEUBIAS-style, EOSS4](https://chanzuckerberg.com/eoss/proposals/gpu-accelerating-fiji-and-friends-using-distributed-clij-neubias-style/)) from the Chan Zuckerberg Initiative DAF, an advised fund of the Silicon Valley Community Foundation, and by support from the French National Research Agency via the [France BioImaging research infrastructure](https://france-bioimaging.org/) (ANR-24-INBS-0005 FBI BIOGEN).
+> We acknowledge support by the Deutsche Forschungsgemeinschaft under Germany’s Excellence Strategy (EXC2068) Cluster of Excellence Physics of Life of TU Dresden and by the Institut Pasteur, Paris. This project has been made possible in part by grant number 2021-237734 ([GPU-accelerating Fiji and friends using distributed CLIJ, NEUBIAS-style, EOSS4](https://chanzuckerberg.com/eoss/proposals/gpu-accelerating-fiji-and-friends-using-distributed-clij-neubias-style/)) from the Chan Zuckerberg Initiative DAF, an advised fund of the Silicon Valley Community Foundation, and by support from the French National Research Agency via the [France BioImaging research infrastructure](https://france-bioimaging.org/) (ANR-24-INBS-0005 FBI BIOGEN).
+
+If you use our translation, we recommend that you also cite the precise version you use. If you link to [crates.io](http://crates.io), you can cite the version number;
+but if you link to our Git repository, for reproducibility, it is better that you provide the URL to the repository and the git hash (Github lists it high up on the page as 7 letters, under the Code button, e.g. '21751cd')
+
+In addition, we appreciate if you cite the paper below describing the translation approach. If for some reason you struggle with journal citation limits, please prioritizing citing the original software over our translation paper.
+
+> Johan Henriksson. Static analysis-guided agentic AI translation enables Rust as a full stack bioinformatics language. arXiv:2608.13029, 2026. https://doi.org/10.48550/arXiv.2608.13029
